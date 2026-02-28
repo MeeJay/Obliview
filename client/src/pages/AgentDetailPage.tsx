@@ -28,9 +28,9 @@ const MAX_HISTORY = 60;
 
 const SECTION_HEIGHTS_KEY = 'bk:agent-section-heights-v2';
 
-// Thread grid has a hard max-h-[148px] → 8 rows × ~14px + 7 gaps × 3px + py-2 (16px) ≈ 148px.
-// That equals 16 threads. Any extra threads appear via the scrollbar inside that div.
-// MIN_TOP_HEIGHT = SectionCard header (~60px) + thread area (148px) + breathing room ≈ 215px.
+// Thread grid grows to fill the available card height (flex-1 + min-h-0, no max-h).
+// overflow-y-auto shows a scrollbar only when threads exceed the visible area.
+// MIN_TOP_HEIGHT = SectionCard header (~60px) + minimum usable thread area + breathing room ≈ 215px.
 const MIN_TOP_HEIGHT    = 215;
 const MIN_MIDDLE_HEIGHT = 120;
 const MIN_BOTTOM_HEIGHT = 80;
@@ -292,59 +292,38 @@ function CpuCard({ metrics, violating }: { metrics: AgentMetrics; violating: boo
         {/* Divider */}
         <div className="w-px bg-border shrink-0" />
 
-        {/* Right: 2-column scrollable grid
-             — each column = 1 thread (T01 left, T02 right), 1 core per row
-             — max-h-[148px] ≈ 8 rows (16 threads) always visible
-             — any extra threads are accessible via the scrollbar              */}
-        <div className="flex-1 min-w-0 overflow-y-auto py-2 px-2 max-h-[148px]">
-          {cores.length > 0 ? (() => {
-            const pairs: Array<{ num: number; t1: number; t2?: number }> = [];
-            for (let i = 0; i < cores.length; i += 2) {
-              pairs.push({ num: Math.floor(i / 2) + 1, t1: cores[i], t2: cores[i + 1] });
-            }
-            return (
-              <div
-                className="grid gap-x-3 gap-y-[3px]"
-                style={{ gridTemplateColumns: '1fr 1fr' }}
-              >
-                {pairs.map((c) => {
-                  const cn = String(c.num).padStart(2, '0');
-                  return (
-                    <React.Fragment key={c.num}>
-                      {/* T01 — left column */}
-                      <div className="flex items-center gap-1 min-w-0">
-                        <span className="text-[8px] font-mono text-text-muted/80 w-[38px] shrink-0">
-                          C{cn}T01
+        {/* Right: 2-column thread grid (1 core per row = 2 threads side-by-side)
+             — grows to fill available card height (flex-1 min-h-0, no max-h)
+             — scrollbar appears only when cores exceed the visible area          */}
+        <div className="flex-1 min-w-0 overflow-y-auto py-2 px-3 min-h-0">
+          {cores.length > 0 ? (
+            <div className="flex flex-col gap-y-[10px]">
+              {Array.from({ length: Math.ceil(cores.length / 2) }, (_, coreIdx) => (
+                <div key={coreIdx} className="grid grid-cols-2 gap-x-3">
+                  {[0, 1].map(t => {
+                    const threadIdx = coreIdx * 2 + t;
+                    const threadPct = cores[threadIdx];
+                    if (threadPct === undefined) return null;
+                    const coreNum = coreIdx + 1;
+                    const threadNum = t + 1;
+                    return (
+                      <div key={t} className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[11px] font-mono text-text-muted/80 w-[36px] shrink-0">
+                          C{coreNum}:{threadNum}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <Bar pct={c.t1} color={usageBarClass(c.t1)} h="h-[4px]" />
+                          <Bar pct={threadPct} color={usageBarClass(threadPct)} h="h-[6px]" />
                         </div>
-                        <span className="text-[9px] tabular-nums text-text-secondary w-[22px] text-right shrink-0">
-                          {c.t1.toFixed(0)}%
+                        <span className="text-[11px] tabular-nums text-text-secondary w-[26px] text-right shrink-0">
+                          {threadPct.toFixed(0)}%
                         </span>
                       </div>
-                      {/* T02 — right column */}
-                      {c.t2 !== undefined ? (
-                        <div className="flex items-center gap-1 min-w-0">
-                          <span className="text-[8px] font-mono text-text-muted/80 w-[38px] shrink-0">
-                            C{cn}T02
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <Bar pct={c.t2} color={usageBarClass(c.t2)} h="h-[4px]" />
-                          </div>
-                          <span className="text-[9px] tabular-nums text-text-secondary w-[22px] text-right shrink-0">
-                            {c.t2.toFixed(0)}%
-                          </span>
-                        </div>
-                      ) : (
-                        <div /> /* empty cell — keep grid aligned for odd thread counts */
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            );
-          })() : (
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : (
             /* Fallback when no per-core data: single overall bar */
             <div className="flex items-center gap-2 pt-2">
               <span className="text-[10px] text-text-muted w-24 shrink-0">Overall</span>
@@ -401,8 +380,8 @@ function RamCard({ metrics, violating }: { metrics: AgentMetrics; violating: boo
           {rows.map((r) => (
             <div key={r.label} className="space-y-0.5">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-text-muted">{r.label}</span>
-                <span className="text-[11px] tabular-nums text-text-secondary">{r.value}</span>
+                <span className="text-xs text-text-muted">{r.label}</span>
+                <span className="text-[13px] tabular-nums text-text-secondary">{r.value}</span>
               </div>
               {r.pct !== undefined && <Bar pct={r.pct} color="bg-violet-400" />}
             </div>
@@ -432,12 +411,14 @@ function GpuCard({ metrics }: { metrics: AgentMetrics }) {
   const gpu = gpus[0];
   const vramPct = (gpu.vramUsedMb / gpu.vramTotalMb) * 100;
   const color = usageSvgColor(gpu.utilizationPct);
-  const rows = gpu.engines && gpu.engines.length > 0
+  const rows: Array<{ label: string; pct: number; displayValue?: string }> = gpu.engines && gpu.engines.length > 0
     ? gpu.engines
     : [
         { label: '3D', pct: gpu.utilizationPct },
         { label: 'VRAM', pct: vramPct },
-        ...(gpu.tempCelsius !== undefined ? [{ label: 'Temp', pct: (gpu.tempCelsius / 120) * 100 }] : []),
+        ...(gpu.tempCelsius !== undefined
+          ? [{ label: 'Temp', pct: (gpu.tempCelsius / 120) * 100, displayValue: `${gpu.tempCelsius.toFixed(0)}°C` }]
+          : []),
       ];
 
   return (
@@ -461,8 +442,10 @@ function GpuCard({ metrics }: { metrics: AgentMetrics }) {
           {rows.map((r) => (
             <div key={r.label} className="space-y-0.5">
               <div className="flex justify-between">
-                <span className="text-[10px] text-text-muted">{r.label}</span>
-                <span className="text-[11px] tabular-nums text-text-secondary">{r.pct.toFixed(0)}%</span>
+                <span className="text-xs text-text-muted">{r.label}</span>
+                <span className="text-[13px] tabular-nums text-text-secondary">
+                  {r.displayValue ?? `${r.pct.toFixed(0)}%`}
+                </span>
               </div>
               <Bar pct={r.pct} color="bg-pink-400" />
             </div>
@@ -490,18 +473,18 @@ function DrivesCard({ metrics, violating }: { metrics: AgentMetrics; violating: 
           return (
             <div key={d.mount} className="px-4 py-2.5 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-secondary truncate max-w-[120px]">{d.mount}</span>
+                <span className="text-sm font-medium text-text-secondary truncate max-w-[120px]">{d.mount}</span>
                 <div className="flex items-center gap-2 shrink-0">
                   {(d.readBytesPerSec !== undefined || d.writeBytesPerSec !== undefined) && (
-                    <span className="text-[10px] text-text-muted flex gap-1">
+                    <span className="text-xs text-text-muted flex gap-1">
                       {d.readBytesPerSec !== undefined && <span className="text-sky-400">↓{fmtBps(d.readBytesPerSec)}</span>}
                       {d.writeBytesPerSec !== undefined && <span className="text-amber-400">↑{fmtBps(d.writeBytesPerSec)}</span>}
                     </span>
                   )}
-                  <span className={`text-xs tabular-nums font-semibold ${vio ? 'text-red-400' : 'text-text-primary'}`}>
+                  <span className={`text-sm tabular-nums font-semibold ${vio ? 'text-red-400' : 'text-text-primary'}`}>
                     {d.percent.toFixed(0)}%
                   </span>
-                  <span className="text-[10px] text-text-muted">{fmtGb(d.usedGb)}/{fmtGb(d.totalGb)}</span>
+                  <span className="text-xs text-text-muted">{fmtGb(d.usedGb)}/{fmtGb(d.totalGb)}</span>
                 </div>
               </div>
               <Bar pct={d.percent} color={vio ? 'bg-red-500' : 'bg-emerald-400'} />
@@ -551,9 +534,10 @@ function FansCard({ metrics }: { metrics: AgentMetrics }) {
 function InterfacesCard({ metrics }: { metrics: AgentMetrics }) {
   const net = metrics.network;
   if (!net) return null;
-  const ifaces = net.interfaces && net.interfaces.length > 0
+  const ifaces = (net.interfaces && net.interfaces.length > 0
     ? net.interfaces
-    : [{ name: 'Total', inBytesPerSec: net.inBytesPerSec, outBytesPerSec: net.outBytesPerSec }];
+    : [{ name: 'Total', inBytesPerSec: net.inBytesPerSec, outBytesPerSec: net.outBytesPerSec }]
+  ).slice().sort((a, b) => (b.inBytesPerSec + b.outBytesPerSec) - (a.inBytesPerSec + a.outBytesPerSec));
   const maxBps = Math.max(...ifaces.flatMap(i => [i.inBytesPerSec, i.outBytesPerSec]), 1048576);
   return (
     <SectionCard icon={<Network size={14} />} title="Interfaces" accent="text-orange-400">
@@ -564,14 +548,14 @@ function InterfacesCard({ metrics }: { metrics: AgentMetrics }) {
             <div className="flex items-center gap-2">
               <ArrowDownToLine size={11} className="text-sky-400 shrink-0" />
               <div className="flex-1"><Bar pct={(iface.inBytesPerSec / maxBps) * 100} color="bg-sky-400" /></div>
-              <span className="text-[11px] tabular-nums text-text-secondary w-20 text-right shrink-0">
+              <span className="text-[13px] tabular-nums text-text-secondary w-20 text-right shrink-0">
                 {fmtBps(iface.inBytesPerSec)}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <ArrowUpFromLine size={11} className="text-orange-400 shrink-0" />
               <div className="flex-1"><Bar pct={(iface.outBytesPerSec / maxBps) * 100} color="bg-orange-400" /></div>
-              <span className="text-[11px] tabular-nums text-text-secondary w-20 text-right shrink-0">
+              <span className="text-[13px] tabular-nums text-text-secondary w-20 text-right shrink-0">
                 {fmtBps(iface.outBytesPerSec)}
               </span>
             </div>
@@ -639,9 +623,9 @@ function OverviewView({
       {/* ── Top row: CPU / RAM / GPU ── */}
       <div
         className="grid gap-4 grid-cols-1 md:grid-cols-3 overflow-hidden"
-        style={{ height: heights.top }}
+        style={{ height: heights.top, gridTemplateRows: '1fr' }}
       >
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col overflow-hidden min-h-0">
           {metrics.cpu
             ? <CpuCard metrics={metrics} violating={hasCpuVio} />
             : <SectionCard icon={<Cpu size={14} />} title="CPU" accent="text-cyan-400">
@@ -649,7 +633,7 @@ function OverviewView({
               </SectionCard>
           }
         </div>
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col overflow-hidden min-h-0">
           {metrics.memory
             ? <RamCard metrics={metrics} violating={hasMemVio} />
             : <SectionCard icon={<MonitorDot size={14} />} title="RAM" accent="text-violet-400">
@@ -657,7 +641,7 @@ function OverviewView({
               </SectionCard>
           }
         </div>
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col overflow-hidden min-h-0">
           <GpuCard metrics={metrics} />
         </div>
       </div>
@@ -675,20 +659,20 @@ function OverviewView({
                 : middleCount === 2 ? 'grid-cols-1 md:grid-cols-2'
                 : 'grid-cols-1',
             )}
-            style={{ height: heights.middle }}
+            style={{ height: heights.middle, gridTemplateRows: '1fr' }}
           >
             {(metrics.disks?.length ?? 0) > 0 && (
-              <div className="h-full flex flex-col">
+              <div className="h-full flex flex-col overflow-hidden min-h-0">
                 <DrivesCard metrics={metrics} violating={hasDiskVio} />
               </div>
             )}
             {hasFans && (
-              <div className="h-full flex flex-col">
+              <div className="h-full flex flex-col overflow-hidden min-h-0">
                 <FansCard metrics={metrics} />
               </div>
             )}
             {hasNet && (
-              <div className="h-full flex flex-col">
+              <div className="h-full flex flex-col overflow-hidden min-h-0">
                 <InterfacesCard metrics={metrics} />
               </div>
             )}
