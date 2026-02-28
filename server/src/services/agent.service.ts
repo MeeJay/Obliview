@@ -576,17 +576,21 @@ export const agentService = {
   // ── Version / download endpoints ─────────────────────────
 
   getAgentVersion(): { version: string } {
-    // Read version from agent/main.go: const agentVersion = "X.X.X"
+    // 1. Try agent/VERSION (plain text "X.Y.Z\n") — present in both dev and prod
+    try {
+      const versionFilePath = path.resolve(__dirname, '../../../../agent/VERSION');
+      const v = fs.readFileSync(versionFilePath, 'utf-8').trim();
+      if (v) return { version: v };
+    } catch { /* not found, try next */ }
+
+    // 2. Dev fallback: parse const agentVersion from agent/main.go
     try {
       const mainGoPath = path.resolve(__dirname, '../../../../agent/main.go');
       const content = fs.readFileSync(mainGoPath, 'utf-8');
       const match = content.match(/const agentVersion\s*=\s*"([^"]+)"/);
-      if (match?.[1]) {
-        return { version: match[1] };
-      }
-    } catch {
-      // fallback below
-    }
+      if (match?.[1]) return { version: match[1] };
+    } catch { /* not found */ }
+
     return { version: '0.0.0' };
   },
 };

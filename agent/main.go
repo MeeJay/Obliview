@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -143,6 +144,36 @@ func generateUUID() string {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
+// ── Version comparison ────────────────────────────────────────────────────────
+
+// parseSemver parses a "MAJOR.MINOR.PATCH" string (leading "v" is stripped).
+// Returns (0,0,0) on any parse error so malformed versions are treated as
+// lower than any real version.
+func parseSemver(v string) (int, int, int) {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) != 3 {
+		return 0, 0, 0
+	}
+	major, _ := strconv.Atoi(parts[0])
+	minor, _ := strconv.Atoi(parts[1])
+	patch, _ := strconv.Atoi(parts[2])
+	return major, minor, patch
+}
+
+// isStrictlyNewer returns true only when remote is strictly greater than current.
+func isStrictlyNewer(remote, current string) bool {
+	rMaj, rMin, rPatch := parseSemver(remote)
+	cMaj, cMin, cPatch := parseSemver(current)
+	if rMaj != cMaj {
+		return rMaj > cMaj
+	}
+	if rMin != cMin {
+		return rMin > cMin
+	}
+	return rPatch > cPatch
+}
+
 // ── Auto-update (Linux / macOS only) ──────────────────────────────────────────
 
 // checkForUpdate fetches the latest version from the server. If a newer
@@ -174,8 +205,8 @@ func checkForUpdate(cfg *Config) {
 		return
 	}
 
-	if info.Version == agentVersion {
-		log.Printf("Auto-update: already up to date (v%s)", agentVersion)
+	if !isStrictlyNewer(info.Version, agentVersion) {
+		log.Printf("Auto-update: already up to date (v%s, server reports v%s)", agentVersion, info.Version)
 		return
 	}
 
