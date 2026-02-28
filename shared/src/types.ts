@@ -389,11 +389,12 @@ export interface AgentThresholds {
 }
 
 export const DEFAULT_AGENT_THRESHOLDS: AgentThresholds = {
-  cpu:    { enabled: true,  threshold: 90,        op: '>' },
-  memory: { enabled: true,  threshold: 90,        op: '>' },
-  disk:   { enabled: true,  threshold: 90,        op: '>' },
-  netIn:  { enabled: false, threshold: 104857600, op: '>' },
-  netOut: { enabled: false, threshold: 104857600, op: '>' },
+  cpu:    { enabled: true,  threshold: 90,         op: '>' },
+  memory: { enabled: true,  threshold: 90,         op: '>' },
+  disk:   { enabled: true,  threshold: 90,         op: '>' },
+  // Network thresholds stored in bytes/sec; 100 Mbps = 100 × 125 000 bytes/sec
+  netIn:  { enabled: false, threshold: 12_500_000, op: '>' },
+  netOut: { enabled: false, threshold: 12_500_000, op: '>' },
 };
 
 // ============================================

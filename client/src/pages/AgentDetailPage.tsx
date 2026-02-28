@@ -834,12 +834,15 @@ function ThresholdEditor({
     setSaving(true);
     try { await onSave(values); onClose(); } finally { setSaving(false); }
   };
-  const rows: Array<{ key: keyof AgentThresholds; label: string; unit: string }> = [
-    { key: 'cpu', label: 'CPU', unit: '%' },
-    { key: 'memory', label: 'Memory', unit: '%' },
-    { key: 'disk', label: 'Disk (any)', unit: '%' },
-    { key: 'netIn', label: 'Net In', unit: 'bytes/s' },
-    { key: 'netOut', label: 'Net Out', unit: 'bytes/s' },
+  // scale: multiply display value by this factor to get the stored bytes/sec value
+  // (1 Mbps = 125 000 bytes/sec)
+  const BYTES_PER_MBIT = 125_000;
+  const rows: Array<{ key: keyof AgentThresholds; label: string; unit: string; scale?: number }> = [
+    { key: 'cpu',    label: 'CPU',        unit: '%' },
+    { key: 'memory', label: 'Memory',     unit: '%' },
+    { key: 'disk',   label: 'Disk (any)', unit: '%' },
+    { key: 'netIn',  label: 'Net In',     unit: 'Mbps', scale: BYTES_PER_MBIT },
+    { key: 'netOut', label: 'Net Out',    unit: 'Mbps', scale: BYTES_PER_MBIT },
   ];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -861,7 +864,7 @@ function ThresholdEditor({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map(({ key, label, unit }) => (
+              {rows.map(({ key, label, unit, scale }) => (
                 <tr key={key}>
                   <td className="py-2.5 font-medium text-text-secondary">{label}</td>
                   <td className="py-2.5 text-center">
@@ -878,8 +881,13 @@ function ThresholdEditor({
                   </td>
                   <td className="py-2.5">
                     <div className="flex items-center gap-1.5">
-                      <input type="number" value={values[key].threshold}
-                        onChange={e => upd(key, 'threshold', Number(e.target.value))}
+                      <input
+                        type="number"
+                        value={scale ? Math.round(values[key].threshold / scale) : values[key].threshold}
+                        onChange={e => upd(key, 'threshold', scale
+                          ? Math.round(Number(e.target.value) * scale)
+                          : Number(e.target.value)
+                        )}
                         disabled={!values[key].enabled} min={0}
                         className="w-24 text-xs border border-border rounded bg-bg-tertiary text-text-primary px-2 py-1 disabled:opacity-40" />
                       <span className="text-xs text-text-muted">{unit}</span>

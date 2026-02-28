@@ -116,8 +116,15 @@ func setupConfig(urlArg, keyArg string) *Config {
 	if cfg.CheckIntervalSeconds == 0 {
 		cfg.CheckIntervalSeconds = 60
 	}
-	if cfg.AgentVersion == "" {
+	// Always use the binary's built-in version (overrides stale config.json value).
+	// Save back to disk so config.json stays accurate after an update.
+	if cfg.AgentVersion != agentVersion {
 		cfg.AgentVersion = agentVersion
+		if err := saveConfig(cfg); err != nil {
+			log.Printf("Warning: could not update agentVersion in config: %v", err)
+		} else {
+			log.Printf("Agent version updated to %s in config", agentVersion)
+		}
 	}
 
 	return cfg

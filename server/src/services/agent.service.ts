@@ -495,17 +495,18 @@ export const agentService = {
 
     if (thresholds.netIn.enabled && m.network !== undefined) {
       if (this._isThresholdExceeded(m.network.inBytesPerSec, thresholds.netIn)) {
-        const mbps = (m.network.inBytesPerSec / 1048576).toFixed(2);
-        const limitMbps = (thresholds.netIn.threshold / 1048576).toFixed(0);
-        violations.push(`Net In: ${mbps} MB/s ${thresholds.netIn.op} ${limitMbps} MB/s`);
+        // Convert bytes/sec → Mbps (1 Mbps = 125 000 bytes/sec)
+        const current = (m.network.inBytesPerSec / 125_000).toFixed(1);
+        const limit   = (thresholds.netIn.threshold  / 125_000).toFixed(0);
+        violations.push(`Net In: ${current} Mbps ${thresholds.netIn.op} ${limit} Mbps`);
       }
     }
 
     if (thresholds.netOut.enabled && m.network !== undefined) {
       if (this._isThresholdExceeded(m.network.outBytesPerSec, thresholds.netOut)) {
-        const mbps = (m.network.outBytesPerSec / 1048576).toFixed(2);
-        const limitMbps = (thresholds.netOut.threshold / 1048576).toFixed(0);
-        violations.push(`Net Out: ${mbps} MB/s ${thresholds.netOut.op} ${limitMbps} MB/s`);
+        const current = (m.network.outBytesPerSec / 125_000).toFixed(1);
+        const limit   = (thresholds.netOut.threshold / 125_000).toFixed(0);
+        violations.push(`Net Out: ${current} Mbps ${thresholds.netOut.op} ${limit} Mbps`);
       }
     }
 
