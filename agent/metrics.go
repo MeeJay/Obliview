@@ -123,10 +123,25 @@ func initCPUInfo() {
 // ── Virtual interface filter ────────────────────────────────────────────────────
 
 func isVirtualIface(name string) bool {
+	// Exact matches
 	if name == "lo" {
 		return true
 	}
-	for _, pfx := range []string{"lo", "docker", "veth", "br-", "virbr", "vbox", "vmnet", "tap", "tun", "dummy"} {
+	// Prefix-based filter — covers Linux + Windows + macOS virtual/internal interfaces
+	for _, pfx := range []string{
+		// Linux
+		"lo", "docker", "veth", "br-", "virbr", "vbox", "vmnet", "tap", "tun", "dummy",
+		// macOS — Apple Silicon internal / system interfaces
+		"anpi",   // Apple NS PCI (internal, no user traffic)
+		"gif",    // IPv6-in-IPv4 tunnel
+		"stf",    // 6to4 tunnel
+		"ap",     // SoftAP / access point mode
+		"awdl",   // Apple Wireless Direct Link (AirDrop)
+		"llw",    // Low Latency WLAN
+		"pktap",  // Packet tap (Wireshark hook)
+		"utun",   // VPN/tunnel (WireGuard, OpenVPN, iCloud Private Relay…)
+		"bridge", // Software bridge
+	} {
 		if strings.HasPrefix(name, pfx) {
 			return true
 		}

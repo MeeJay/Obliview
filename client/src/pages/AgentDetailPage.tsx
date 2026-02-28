@@ -86,6 +86,14 @@ function fmtBps(bps: number): string {
   if (bps >= 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
   return `${bps.toFixed(0)} B/s`;
 }
+/** Network throughput: bytes/sec → bits/sec using decimal SI (Kbps/Mbps/Gbps). */
+function fmtNetBits(bps: number): string {
+  const bits = bps * 8;
+  if (bits >= 1_000_000_000) return `${(bits / 1_000_000_000).toFixed(2)} Gbps`;
+  if (bits >= 1_000_000)     return `${(bits / 1_000_000).toFixed(2)} Mbps`;
+  if (bits >= 1_000)         return `${(bits / 1_000).toFixed(1)} Kbps`;
+  return `${bits.toFixed(0)} bps`;
+}
 function fmtRelTime(iso: string): string {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${s}s ago`;
@@ -549,14 +557,14 @@ function InterfacesCard({ metrics }: { metrics: AgentMetrics }) {
               <ArrowDownToLine size={11} className="text-sky-400 shrink-0" />
               <div className="flex-1"><Bar pct={(iface.inBytesPerSec / maxBps) * 100} color="bg-sky-400" /></div>
               <span className="text-[13px] tabular-nums text-text-secondary w-20 text-right shrink-0">
-                {fmtBps(iface.inBytesPerSec)}
+                {fmtNetBits(iface.inBytesPerSec)}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <ArrowUpFromLine size={11} className="text-orange-400 shrink-0" />
               <div className="flex-1"><Bar pct={(iface.outBytesPerSec / maxBps) * 100} color="bg-orange-400" /></div>
               <span className="text-[13px] tabular-nums text-text-secondary w-20 text-right shrink-0">
-                {fmtBps(iface.outBytesPerSec)}
+                {fmtNetBits(iface.outBytesPerSec)}
               </span>
             </div>
           </div>
