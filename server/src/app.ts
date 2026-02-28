@@ -25,6 +25,9 @@ const PgSession = connectPgSimple(session);
 export function createApp() {
   const app = express();
 
+  // Trust reverse proxy so req.ip uses X-Forwarded-For (required for accurate rate limiting)
+  app.set('trust proxy', 1);
+
   // Security
   app.use(helmet());
   app.use(

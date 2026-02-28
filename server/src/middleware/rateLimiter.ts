@@ -5,6 +5,11 @@ export const apiLimiter = rateLimit({
   max: 500,
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip machine-to-machine endpoints: agent pushes and passive heartbeats are
+  // already authenticated (API key / token) and can be high-frequency.
+  skip: (req) =>
+    req.path.startsWith('/api/agent/push') ||
+    req.path.startsWith('/api/heartbeat/'),
   message: {
     success: false,
     error: 'Too many requests, please try again later',
