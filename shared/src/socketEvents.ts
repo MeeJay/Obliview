@@ -29,6 +29,8 @@ export const SOCKET_EVENTS = {
 
   // Agent device events
   AGENT_DEVICE_UPDATED: 'agent:deviceUpdated',
+  /** Real-time UP/ALERT/DOWN/INACTIVE status from agent push or offline watchdog */
+  AGENT_STATUS_CHANGED: 'agent:statusChanged',
 } as const;
 
 // Client → Server events

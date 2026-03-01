@@ -5,6 +5,7 @@ import {
   Network, Activity, Server, AlertTriangle, Wind, Thermometer,
   MonitorDot, ArrowDownToLine, ArrowUpFromLine,
   Pencil, Check, X, Timer, LayoutDashboard,
+  MemoryStick, Settings, Wifi,
 } from 'lucide-react';
 import type { AgentDevice, AgentThresholds, AgentMetricThreshold } from '@obliview/shared';
 import { DEFAULT_AGENT_THRESHOLDS } from '@obliview/shared';
@@ -19,7 +20,7 @@ import { cn } from '../utils/cn';
 // Types / constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-type View = 'overview' | 'cpu';
+type View = 'overview' | 'cpu' | 'ram' | 'gpu' | 'others' | 'temps';
 const MAX_HISTORY = 60;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,6 +110,13 @@ function extractVendor(model: string): string {
   if (lc.includes('arm')) return 'ARM';
   return '';
 }
+function fmtTimestampShort(iso: string, period: 'realtime' | '1h' | '24h' = 'realtime'): string {
+  const d = new Date(iso);
+  if (period === '24h') {
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Color helpers
@@ -123,6 +131,11 @@ function usageBarClass(pct: number, violating = false): string {
   if (violating || pct >= 90) return 'bg-red-500';
   if (pct >= 75) return 'bg-yellow-500';
   return 'bg-cyan-400';
+}
+function usageTextClass(pct: number, violating = false): string {
+  if (violating || pct >= 90) return 'text-red-400';
+  if (pct >= 75) return 'text-yellow-400';
+  return 'text-cyan-400';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,14 +175,32 @@ function Bar({ pct, color, h = 'h-[5px]' }: { pct: number; color: string; h?: st
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Downsample helper — evenly pick n representative samples from snapshots array
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Evenly pick n representative samples from snapshots array */
+function downsample(snapshots: AgentPushSnapshot[], n: number): AgentPushSnapshot[] {
+  if (snapshots.length <= n) return snapshots;
+  const result: AgentPushSnapshot[] = [];
+  for (let i = 0; i < n; i++) {
+    const idx = Math.round((i / (n - 1)) * (snapshots.length - 1));
+    result.push(snapshots[idx]);
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Spark line/area chart
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SparkChart({
-  data, id, yMin = 0, yMax = 100, color, height = 100,
+  data, id, yMin = 0, yMax = 100, color, height = 100, timestamps, unit = '', period = 'realtime',
 }: {
   data: number[]; id: string; yMin?: number; yMax?: number; color: string; height?: number;
+  timestamps?: string[]; unit?: string; period?: 'realtime' | '1h' | '24h';
 }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const gradId = `sg-${id}`;
   if (data.length < 2) return <div className="w-full bg-white/5 rounded" style={{ height }} />;
   const W = 500; const H = 80;
@@ -180,10 +211,22 @@ function SparkChart({
   const toY = (v: number) => PT + cH - ((Math.min(yMax, Math.max(yMin, v)) - yMin) / range) * cH;
   const pts = data.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
   const areaD = [`M ${PL} ${PT + cH}`, ...data.map((v, i) => `L ${toX(i)} ${toY(v)}`), `L ${PL + cW} ${PT + cH}`, 'Z'].join(' ');
-  // Grid at 0%, 50%, 100%
   const gridYs = [yMin, yMin + range / 2, yMax];
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const idx = Math.round(relX * (data.length - 1));
+    setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)));
+  };
+  const hX = hoverIdx !== null ? toX(hoverIdx) : null;
+  const hY = hoverIdx !== null ? toY(data[hoverIdx]) : null;
+  const hVal = hoverIdx !== null ? data[hoverIdx] : null;
+  const hTs = hoverIdx !== null && timestamps ? timestamps[hoverIdx] : null;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height }}
+      preserveAspectRatio="none"
+      onMouseMove={handleMouseMove} onMouseLeave={() => setHoverIdx(null)}>
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.35" />
@@ -192,11 +235,30 @@ function SparkChart({
         <clipPath id={`clip-${id}`}><rect x={PL} y={PT} width={cW} height={cH} /></clipPath>
       </defs>
       {gridYs.map((v, i) => (
-        <line key={i} x1={PL} y1={toY(v)} x2={PL + cW} y2={toY(v)}
-          stroke="rgba(255,255,255,0.06)" strokeWidth="0.8" />
+        <line key={i} x1={PL} y1={toY(v)} x2={PL + cW} y2={toY(v)} stroke="rgba(255,255,255,0.06)" strokeWidth="0.8" />
       ))}
       <path d={areaD} fill={`url(#${gradId})`} clipPath={`url(#clip-${id})`} />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" clipPath={`url(#clip-${id})`} />
+      {hoverIdx !== null && hX !== null && hY !== null && hVal !== null && (
+        <g>
+          <line x1={hX} y1={PT} x2={hX} y2={PT + cH} stroke="rgba(255,255,255,0.25)" strokeWidth="0.8" strokeDasharray="2,2" />
+          <circle cx={hX} cy={hY} r="3" fill={color} />
+          {(() => {
+            const label = `${hVal.toFixed(1)}${unit}`;
+            const timeLabel = hTs ? fmtTimestampShort(hTs, period) : null;
+            const bw = Math.max(label.length * 5.5, timeLabel ? timeLabel.length * 4.8 : 0, 38);
+            const tx = Math.max(2, Math.min(hX, cW - bw - 4));
+            const ty = Math.max(PT + 2, hY - 26);
+            return (
+              <g>
+                <rect x={tx - 2} y={ty} width={bw + 4} height={timeLabel ? 24 : 14} rx="3" fill="rgba(0,0,0,0.75)" />
+                <text x={tx + bw / 2} y={ty + 9} fill="white" fontSize="9" fontFamily="monospace" textAnchor="middle">{label}</text>
+                {timeLabel && <text x={tx + bw / 2} y={ty + 20} fill="#aaa" fontSize="8" fontFamily="monospace" textAnchor="middle">{timeLabel}</text>}
+              </g>
+            );
+          })()}
+        </g>
+      )}
     </svg>
   );
 }
@@ -654,7 +716,7 @@ function OverviewView({
         </div>
       </div>
 
-      {/* Resize handle — top section */}
+      {/* Resize handle — resizes the top section */}
       <ResizeHandle onResize={onTopResize} />
 
       {/* ── Middle row: Drives / Fans / Interfaces ── */}
@@ -685,37 +747,50 @@ function OverviewView({
               </div>
             )}
           </div>
-
-          {/* Resize handle — middle section (only if temps exist below) */}
+          {/* Resize handle between middle and temperature — resizes the middle section */}
           {hasTemp && <ResizeHandle onResize={onMidResize} />}
         </>
       )}
 
-      {/* Resize handle — between top and bottom when no middle */}
+      {/* Resize handle between top and temperature when no middle section */}
       {!hasMiddle && hasTemp && <ResizeHandle onResize={onBottomResize} />}
 
       {/* ── Bottom: Temps ── */}
       {hasTemp && (
-        <div style={{ height: heights.bottom }}>
-          <TempsSection metrics={metrics} />
-        </div>
+        <>
+          <div style={{ height: heights.bottom }}>
+            <TempsSection metrics={metrics} />
+          </div>
+          {/* Resize handle BELOW the temperature section */}
+          <ResizeHandle onResize={onBottomResize} />
+        </>
       )}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CPU Detail View (history charts)
+// Chart Card wrapper
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ChartCard({
   icon, title, accent, data, id, yMin, yMax, color, unit, latestLabel, height = 110,
+  timestamps, period,
 }: {
   icon: React.ReactNode; title: string; accent: string;
   data: number[]; id: string; yMin?: number; yMax?: number;
   color: string; unit: string; latestLabel?: string; height?: number;
+  timestamps?: string[]; period?: 'realtime' | '1h' | '24h';
 }) {
   const latest = data[data.length - 1];
+  // Time axis labels: show start, middle, end timestamps
+  const timeLabels: string[] = [];
+  if (timestamps && timestamps.length >= 2) {
+    const fmt = (iso: string) => fmtTimestampShort(iso, period ?? 'realtime');
+    timeLabels.push(fmt(timestamps[0]));
+    if (timestamps.length > 2) timeLabels.push(fmt(timestamps[Math.floor(timestamps.length / 2)]));
+    timeLabels.push(fmt(timestamps[timestamps.length - 1]));
+  }
   return (
     <div className="rounded-xl border border-border bg-bg-secondary overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
@@ -727,20 +802,58 @@ function ChartCard({
         )}
       </div>
       <div className="p-3 pb-2">
-        <SparkChart data={data} id={id} yMin={yMin} yMax={yMax} color={color} height={height} />
+        <SparkChart data={data} id={id} yMin={yMin} yMax={yMax} color={color} height={height}
+          timestamps={timestamps} unit={unit} period={period} />
         <div className="flex justify-between text-[10px] text-text-muted mt-1 px-0.5">
-          <span>{data.length > 1 ? `${data.length} samples` : '—'}</span>
-          <span>Now</span>
+          {timeLabels.length >= 2 ? (
+            <>
+              <span>{timeLabels[0]}</span>
+              {timeLabels.length === 3 && <span className="hidden sm:inline">{timeLabels[1]}</span>}
+              <span>{timeLabels[timeLabels.length - 1]}</span>
+            </>
+          ) : (
+            <>
+              <span>{data.length > 1 ? `${data.length} samples` : '—'}</span>
+              <span>Now</span>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function CpuView({ metrics, history }: { metrics: AgentMetrics; history: AgentPushSnapshot[] }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// CPU Detail View (history charts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CPU_CORES_HEIGHT_KEY = 'bk:agent-cpu-cores-height';
+
+function CpuView({ metrics, history, period }: { metrics: AgentMetrics; history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' }) {
   const cpu = metrics.cpu;
   const vendor = cpu?.model ? extractVendor(cpu.model) : '';
   const threads = cpu?.cores?.length ?? 0;
+  const cores = cpu?.cores ?? [];
+  const timestamps = history.map(h => h.receivedAt);
+
+  // Physical cores: assume 2 threads per physical core (same grouping as CpuCard in Overview)
+  const numCores = Math.ceil(cores.length / 2);
+
+  // Resizable height for the per-core scrollable area (persisted in localStorage)
+  const [coresHeight, setCoresHeight] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(CPU_CORES_HEIGHT_KEY);
+      if (raw) return Math.max(140, parseInt(raw, 10));
+    } catch { /* ignore */ }
+    return 340;
+  });
+  const onCoresResize = useCallback((dy: number) => {
+    setCoresHeight(prev => {
+      const next = Math.max(140, prev + dy);
+      try { localStorage.setItem(CPU_CORES_HEIGHT_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   const loadData = history.map(h => h.metrics.cpu?.percent ?? 0);
   const loadAvgData = history.map(h => h.metrics.loadAvg ?? 0);
@@ -756,55 +869,130 @@ function CpuView({ metrics, history }: { metrics: AgentMetrics; history: AgentPu
 
   return (
     <div className="space-y-4">
-      {/* CPU Info */}
-      <div className="rounded-xl border border-border bg-bg-secondary p-4">
-        <div className="flex items-center gap-2 text-sm font-bold text-cyan-400 mb-3">
-          <Cpu size={14} /> CPU Info
+      {/* CPU Info — full-width card with metadata + resizable per-core grid */}
+      <div className="rounded-xl border border-border bg-bg-secondary overflow-hidden">
+        {/* Header */}
+        <div className="px-4 pt-3 pb-2 border-b border-border">
+          <div className="flex items-center gap-2 text-sm font-bold text-cyan-400">
+            <Cpu size={14} /> CPU Info
+          </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          {vendor && (
-            <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Vendor</div>
-              <div className="text-text-primary font-medium">{vendor}</div>
+
+        <div className="p-4 pb-2">
+          {/* Metadata row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            {vendor && (
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Vendor</div>
+                <div className="text-text-primary font-medium">{vendor}</div>
+              </div>
+            )}
+            {cpu?.model && (
+              <div className="col-span-2">
+                <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Model</div>
+                <div className="text-text-primary font-medium truncate">{cpu.model}</div>
+              </div>
+            )}
+            {cpu?.freqMhz && (
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Base Speed</div>
+                <div className="text-text-primary font-medium">
+                  {cpu.freqMhz >= 1000 ? `${(cpu.freqMhz / 1000).toFixed(2)} GHz` : `${cpu.freqMhz} MHz`}
+                </div>
+              </div>
+            )}
+            {threads > 0 && (
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Threads</div>
+                <div className="text-text-primary font-medium">{threads} T</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Per-core section — only shown when per-thread data is available */}
+        {cores.length > 0 && (
+          <>
+            {/* Section divider with core count label */}
+            <div className="flex items-center gap-3 px-4 py-1.5">
+              <div className="flex-1 border-t border-border" />
+              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest shrink-0">
+                {numCores} Cores · {cores.length} Threads
+              </span>
+              <div className="flex-1 border-t border-border" />
             </div>
-          )}
-          {cpu?.model && (
-            <div className="col-span-2">
-              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Model</div>
-              <div className="text-text-primary font-medium truncate">{cpu.model}</div>
-            </div>
-          )}
-          {cpu?.freqMhz && (
-            <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Base Speed</div>
-              <div className="text-text-primary font-medium">
-                {cpu.freqMhz >= 1000 ? `${(cpu.freqMhz / 1000).toFixed(2)} GHz` : `${cpu.freqMhz} MHz`}
+
+            {/* Scrollable 2-column core grid */}
+            <div
+              style={{ height: coresHeight }}
+              className="overflow-y-auto px-4 pb-1"
+            >
+              <div className="grid grid-cols-2 gap-3 pb-1">
+                {Array.from({ length: numCores }, (_, cIdx) => {
+                  const t1 = cores[cIdx * 2];
+                  const t2 = cores[cIdx * 2 + 1];
+                  const avgPct = t2 !== undefined ? (t1 + t2) / 2 : t1;
+                  return (
+                    <div
+                      key={cIdx}
+                      className="rounded-lg bg-white/[0.04] border border-white/[0.06] p-3 space-y-2.5"
+                    >
+                      {/* Core header */}
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs font-bold text-cyan-400/80 tracking-wide">C{cIdx + 1}</span>
+                        <span className={`text-[11px] tabular-nums font-semibold ${usageTextClass(avgPct)}`}>
+                          {avgPct.toFixed(0)}%
+                        </span>
+                      </div>
+
+                      {/* Thread 1 */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono text-text-muted/70">T1</span>
+                          <span className="text-[11px] tabular-nums text-text-secondary">{t1.toFixed(0)}%</span>
+                        </div>
+                        <Bar pct={t1} color={usageBarClass(t1)} h="h-[11px]" />
+                      </div>
+
+                      {/* Thread 2 (only when HT / SMT) */}
+                      {t2 !== undefined && (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-mono text-text-muted/70">T2</span>
+                            <span className="text-[11px] tabular-nums text-text-secondary">{t2.toFixed(0)}%</span>
+                          </div>
+                          <Bar pct={t2} color={usageBarClass(t2)} h="h-[11px]" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          )}
-          {threads > 0 && (
-            <div>
-              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Threads</div>
-              <div className="text-text-primary font-medium">{threads} T</div>
-            </div>
-          )}
-        </div>
+
+            {/* Drag handle — resize the cores panel */}
+            <ResizeHandle onResize={onCoresResize} />
+          </>
+        )}
       </div>
 
       {/* Charts grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {loadData.length >= 2 && (
           <ChartCard icon={<Activity size={13} />} title="CPU Load" accent="text-cyan-400"
-            data={loadData} id="cpu-load" yMin={0} yMax={100} color="#22d3ee" unit="%" />
+            data={loadData} id="cpu-load" yMin={0} yMax={100} color="#22d3ee" unit="%"
+            timestamps={timestamps} period={period} />
         )}
         {loadAvgData.some(v => v > 0) && (
           <ChartCard icon={<Activity size={13} />} title="Load Average" accent="text-sky-400"
-            data={loadAvgData} id="load-avg" yMin={0} yMax={Math.max(...loadAvgData, 1)} color="#38bdf8" unit="" />
+            data={loadAvgData} id="load-avg" yMin={0} yMax={Math.max(...loadAvgData, 1)} color="#38bdf8" unit=""
+            timestamps={timestamps} period={period} />
         )}
         {tempData.length >= 2 && (
           <ChartCard icon={<Thermometer size={13} />} title="Avg Temperature" accent="text-rose-400"
             data={tempData} id="cpu-temp" yMin={20} yMax={100} color="#f87171" unit="°C"
-            latestLabel={`${tempData[tempData.length - 1].toFixed(1)}°C`} />
+            latestLabel={`${tempData[tempData.length - 1].toFixed(1)}°C`}
+            timestamps={timestamps.slice(0, tempData.length)} period={period} />
         )}
         {freqData.length >= 2 && (
           <ChartCard icon={<Cpu size={13} />} title="Clock Speed" accent="text-violet-400"
@@ -814,7 +1002,8 @@ function CpuView({ metrics, history }: { metrics: AgentMetrics; history: AgentPu
             color="#a78bfa" unit=" MHz"
             latestLabel={freqData[freqData.length - 1] >= 1000
               ? `${(freqData[freqData.length - 1] / 1000).toFixed(2)} GHz`
-              : `${freqData[freqData.length - 1].toFixed(0)} MHz`} />
+              : `${freqData[freqData.length - 1].toFixed(0)} MHz`}
+            timestamps={timestamps.slice(0, freqData.length)} period={period} />
         )}
       </div>
 
@@ -823,6 +1012,268 @@ function CpuView({ metrics, history }: { metrics: AgentMetrics; history: AgentPu
           Graphs will appear as data accumulates (need at least 2 push cycles).
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RAM View
+// ─────────────────────────────────────────────────────────────────────────────
+
+function RamView({ history, period }: { history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' }) {
+  const timestamps = history.map(h => h.receivedAt);
+  const memPct = history.map(h => h.metrics.memory?.percent ?? 0);
+  const memUsedMB = history.map(h => h.metrics.memory?.usedMb ?? 0);
+  const swapUsed = history.map(h => h.metrics.memory?.swapUsedMb ?? 0);
+  const hasSwap = swapUsed.some(v => v > 0);
+  const latest = history[history.length - 1]?.metrics.memory;
+  const maxMem = latest ? latest.totalMb : Math.max(...memUsedMB, 1);
+  const maxSwap = latest?.swapTotalMb ?? Math.max(...swapUsed, 1);
+  return (
+    <div className="space-y-4">
+      {latest && (
+        <div className="rounded-xl border border-border bg-bg-secondary p-4">
+          <div className="flex items-center gap-2 text-sm font-bold text-violet-400 mb-3">
+            <MemoryStick size={14} /> RAM Info
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Total</div>
+              <div className="text-text-primary font-medium">{fmtMb(latest.totalMb)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Used</div>
+              <div className="text-text-primary font-medium">{fmtMb(latest.usedMb)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Available</div>
+              <div className="text-text-primary font-medium">{fmtMb(latest.totalMb - latest.usedMb)}</div>
+            </div>
+            {latest.cachedMb != null && latest.cachedMb > 0 && (
+              <div>
+                <div className="text-[10px] text-text-muted uppercase tracking-wide mb-0.5">Cached</div>
+                <div className="text-text-primary font-medium">{fmtMb(latest.cachedMb)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {memPct.length >= 2 && (
+          <ChartCard icon={<MemoryStick size={13} />} title="Memory Usage" accent="text-violet-400"
+            data={memPct} id="ram-pct" yMin={0} yMax={100} color="#a78bfa" unit="%"
+            timestamps={timestamps} period={period} />
+        )}
+        {memUsedMB.length >= 2 && (
+          <ChartCard icon={<MemoryStick size={13} />} title="Memory Used" accent="text-violet-400"
+            data={memUsedMB} id="ram-used" yMin={0} yMax={maxMem} color="#8b5cf6" unit=" MB"
+            latestLabel={fmtMb(memUsedMB[memUsedMB.length - 1])}
+            timestamps={timestamps} period={period} />
+        )}
+        {hasSwap && swapUsed.length >= 2 && (
+          <ChartCard icon={<MemoryStick size={13} />} title="Swap Used" accent="text-purple-400"
+            data={swapUsed} id="swap-used" yMin={0} yMax={maxSwap} color="#7c3aed" unit=" MB"
+            latestLabel={fmtMb(swapUsed[swapUsed.length - 1])}
+            timestamps={timestamps} period={period} />
+        )}
+      </div>
+      {history.length < 2 && (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center text-text-muted text-sm">
+          Graphs will appear as data accumulates (need at least 2 push cycles).
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GPU View
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GpuView({ history, period }: { history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' }) {
+  const timestamps = history.map(h => h.receivedAt);
+  // Collect unique GPU names across history
+  const gpuNames = Array.from(new Set(history.flatMap(h => (h.metrics.gpus ?? []).map(g => g.model))));
+  if (gpuNames.length === 0) return (
+    <div className="rounded-xl border border-dashed border-border p-8 text-center text-text-muted text-sm">
+      No GPU data available.
+    </div>
+  );
+  return (
+    <div className="space-y-6">
+      {gpuNames.map((name, gi) => {
+        const utilData = history.map(h => (h.metrics.gpus ?? [])[gi]?.utilizationPct ?? 0);
+        const vramUsed = history.map(h => (h.metrics.gpus ?? [])[gi]?.vramUsedMb ?? 0);
+        const tempData = history.map(h => (h.metrics.gpus ?? [])[gi]?.tempCelsius ?? 0).filter(v => v > 0);
+        const hasTempData = tempData.length > 0;
+        const latestGpu = history[history.length - 1]?.metrics.gpus?.[gi];
+        const maxVram = latestGpu?.vramTotalMb ?? Math.max(...vramUsed, 1);
+        return (
+          <div key={name} className="space-y-3">
+            <div className="rounded-xl border border-border bg-bg-secondary p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-indigo-400 mb-1">
+                <MonitorDot size={14} /> {name}
+              </div>
+              {latestGpu && (
+                <div className="flex gap-6 text-xs text-text-muted mt-1">
+                  <span>VRAM {fmtMb(latestGpu.vramUsedMb)} / {fmtMb(latestGpu.vramTotalMb)}</span>
+                  {(latestGpu.tempCelsius ?? 0) > 0 && <span>{latestGpu.tempCelsius!.toFixed(0)}°C</span>}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {utilData.length >= 2 && (
+                <ChartCard icon={<MonitorDot size={13} />} title="GPU Utilization" accent="text-indigo-400"
+                  data={utilData} id={`gpu-${gi}-util`} yMin={0} yMax={100} color="#818cf8" unit="%"
+                  timestamps={timestamps} period={period} />
+              )}
+              {vramUsed.length >= 2 && (
+                <ChartCard icon={<MonitorDot size={13} />} title="VRAM Used" accent="text-indigo-400"
+                  data={vramUsed} id={`gpu-${gi}-vram`} yMin={0} yMax={maxVram} color="#6366f1" unit=" MB"
+                  latestLabel={fmtMb(vramUsed[vramUsed.length - 1])}
+                  timestamps={timestamps} period={period} />
+              )}
+              {hasTempData && tempData.length >= 2 && (
+                <ChartCard icon={<Thermometer size={13} />} title="GPU Temperature" accent="text-rose-400"
+                  data={tempData} id={`gpu-${gi}-temp`} yMin={20} yMax={100} color="#f87171" unit="°C"
+                  latestLabel={`${tempData[tempData.length - 1].toFixed(0)}°C`}
+                  timestamps={timestamps.slice(0, tempData.length)} period={period} />
+              )}
+            </div>
+          </div>
+        );
+      })}
+      {history.length < 2 && (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center text-text-muted text-sm">
+          Graphs will appear as data accumulates.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Others View (Disks + Interfaces)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function OthersView({ history, period }: { history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' }) {
+  const timestamps = history.map(h => h.receivedAt);
+  // Collect unique disk mounts and interface names
+  const mounts = Array.from(new Set(history.flatMap(h => (h.metrics.disks ?? []).map(d => d.mount))));
+  const ifaceNames = Array.from(new Set(history.flatMap(h => (h.metrics.network?.interfaces ?? []).map(i => i.name))));
+  const hasIO = mounts.some(mount =>
+    history.some(h => {
+      const d = (h.metrics.disks ?? []).find(d => d.mount === mount);
+      return (d?.readBytesPerSec ?? 0) > 0 || (d?.writeBytesPerSec ?? 0) > 0;
+    })
+  );
+  const hasNetIO = ifaceNames.some(name =>
+    history.some(h => {
+      const i = (h.metrics.network?.interfaces ?? []).find(i => i.name === name);
+      return (i?.inBytesPerSec ?? 0) > 0 || (i?.outBytesPerSec ?? 0) > 0;
+    })
+  );
+  return (
+    <div className="space-y-6">
+      {/* Disk I/O */}
+      {hasIO && (
+        <div>
+          <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <HardDrive size={12} /> Disk I/O
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {mounts.flatMap(mount => {
+              const readData = history.map(h => (h.metrics.disks ?? []).find(d => d.mount === mount)?.readBytesPerSec ?? 0);
+              const writeData = history.map(h => (h.metrics.disks ?? []).find(d => d.mount === mount)?.writeBytesPerSec ?? 0);
+              const hasRead = readData.some(v => v > 0);
+              const hasWrite = writeData.some(v => v > 0);
+              if (!hasRead && !hasWrite) return [];
+              const maxIO = Math.max(...readData, ...writeData, 1);
+              return [
+                hasRead && readData.length >= 2 && (
+                  <ChartCard key={`${mount}-r`} icon={<HardDrive size={13} />} title={`${mount} Read`} accent="text-emerald-400"
+                    data={readData} id={`disk-${mount}-r`.replace(/\//g, '-')} yMin={0} yMax={maxIO} color="#34d399" unit=" B/s"
+                    latestLabel={fmtBps(readData[readData.length - 1])}
+                    timestamps={timestamps} period={period} />
+                ),
+                hasWrite && writeData.length >= 2 && (
+                  <ChartCard key={`${mount}-w`} icon={<HardDrive size={13} />} title={`${mount} Write`} accent="text-amber-400"
+                    data={writeData} id={`disk-${mount}-w`.replace(/\//g, '-')} yMin={0} yMax={maxIO} color="#fbbf24" unit=" B/s"
+                    latestLabel={fmtBps(writeData[writeData.length - 1])}
+                    timestamps={timestamps} period={period} />
+                ),
+              ].filter(Boolean);
+            })}
+          </div>
+        </div>
+      )}
+      {/* Network I/O per interface */}
+      {hasNetIO && (
+        <div>
+          <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Wifi size={12} /> Network I/O
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {ifaceNames.flatMap(name => {
+              const inData = history.map(h => (h.metrics.network?.interfaces ?? []).find(i => i.name === name)?.inBytesPerSec ?? 0);
+              const outData = history.map(h => (h.metrics.network?.interfaces ?? []).find(i => i.name === name)?.outBytesPerSec ?? 0);
+              if (!inData.some(v => v > 0) && !outData.some(v => v > 0)) return [];
+              const maxNet = Math.max(...inData, ...outData, 1);
+              return [
+                inData.length >= 2 && (
+                  <ChartCard key={`${name}-in`} icon={<ArrowDownToLine size={13} />} title={`${name} ↓`} accent="text-sky-400"
+                    data={inData} id={`net-${name}-in`} yMin={0} yMax={maxNet} color="#38bdf8" unit=" B/s"
+                    latestLabel={fmtBps(inData[inData.length - 1])}
+                    timestamps={timestamps} period={period} />
+                ),
+                outData.length >= 2 && (
+                  <ChartCard key={`${name}-out`} icon={<ArrowUpFromLine size={13} />} title={`${name} ↑`} accent="text-orange-400"
+                    data={outData} id={`net-${name}-out`} yMin={0} yMax={maxNet} color="#fb923c" unit=" B/s"
+                    latestLabel={fmtBps(outData[outData.length - 1])}
+                    timestamps={timestamps} period={period} />
+                ),
+              ].filter(Boolean);
+            })}
+          </div>
+        </div>
+      )}
+      {!hasIO && !hasNetIO && (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center text-text-muted text-sm">
+          No disk I/O or network data available. Data accumulates after 2 push cycles.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Temperatures View
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TempsView({ history, period }: { history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' }) {
+  const timestamps = history.map(h => h.receivedAt);
+  const sensorLabels = Array.from(new Set(history.flatMap(h => (h.metrics.temps ?? []).map(t => t.label))));
+  if (sensorLabels.length === 0) return (
+    <div className="rounded-xl border border-dashed border-border p-8 text-center text-text-muted text-sm">
+      No temperature data available.
+    </div>
+  );
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {sensorLabels.map(label => {
+        const data = history.map(h => (h.metrics.temps ?? []).find(t => t.label === label)?.celsius ?? 0);
+        if (data.length < 2) return null;
+        const maxTemp = Math.max(...data, 80);
+        const latestTemp = data[data.length - 1];
+        const color = latestTemp >= 90 ? '#ef4444' : latestTemp >= 75 ? '#eab308' : '#f87171';
+        const accent = latestTemp >= 90 ? 'text-red-400' : latestTemp >= 75 ? 'text-yellow-400' : 'text-rose-400';
+        return (
+          <ChartCard key={label} icon={<Thermometer size={13} />} title={label} accent={accent}
+            data={data} id={`temp-${label}`} yMin={0} yMax={maxTemp} color={color} unit="°C"
+            latestLabel={`${latestTemp.toFixed(0)}°C`}
+            timestamps={timestamps} period={period} />
+        );
+      })}
     </div>
   );
 }
@@ -922,12 +1373,94 @@ function ThresholdEditor({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Agent Edit Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AgentEditModal({
+  device, onSave, onClose,
+}: { device: AgentDevice; onSave: (updated: AgentDevice) => void; onClose: () => void }) {
+  const [name, setName] = useState(device.name ?? '');
+  const [interval, setIntervalVal] = useState(device.checkIntervalSeconds ?? 60);
+  const [heartbeat, setHeartbeat] = useState(device.heartbeatMonitoring ?? true);
+  const [saving, setSaving] = useState(false);
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated = await agentApi.updateDevice(device.id, {
+        name: name.trim() || null,
+        checkIntervalSeconds: Math.max(1, Math.min(86400, interval)),
+        heartbeatMonitoring: heartbeat,
+      });
+      onSave(updated);
+      onClose();
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-border bg-bg-primary shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
+            <Settings size={16} /> Agent Settings
+          </h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-xl leading-none">×</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-text-muted uppercase tracking-wide mb-1.5">Display Name</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)}
+              placeholder={device.hostname}
+              className="w-full rounded-lg border border-border bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted" />
+            <p className="text-xs text-text-muted mt-1">Leave empty to use hostname as title.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted uppercase tracking-wide mb-1.5">Push Interval (seconds)</label>
+            <input type="number" value={interval} onChange={e => setIntervalVal(Number(e.target.value))}
+              min={1} max={86400}
+              className="w-full rounded-lg border border-border bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent" />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-text-primary">Heartbeat Monitoring</div>
+              <div className="text-xs text-text-muted">Alert when agent goes offline</div>
+            </div>
+            <button
+              onClick={() => setHeartbeat(v => !v)}
+              className={cn(
+                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                heartbeat ? 'bg-accent' : 'bg-bg-tertiary border border-border',
+              )}
+            >
+              <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', heartbeat ? 'translate-x-6' : 'translate-x-1')} />
+            </button>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-border">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-bg-hover transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent/90 disabled:opacity-60 transition-colors">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: Array<{ id: View; icon: React.ReactNode; label: string }> = [
   { id: 'overview', icon: <LayoutDashboard size={18} />, label: 'Overview' },
   { id: 'cpu',      icon: <Cpu size={18} />,             label: 'CPU' },
+  { id: 'ram',      icon: <MemoryStick size={18} />,     label: 'RAM' },
+  { id: 'gpu',      icon: <MonitorDot size={18} />,      label: 'GPU' },
+  { id: 'others',   icon: <HardDrive size={18} />,       label: 'Disk / Net' },
+  { id: 'temps',    icon: <Thermometer size={18} />,     label: 'Temperatures' },
 ];
 
 export function AgentDetailPage() {
@@ -946,6 +1479,10 @@ export function AgentDetailPage() {
   const [editingInterval, setEditingInterval] = useState(false);
   const [intervalValue, setIntervalValue] = useState(60);
   const [savingInterval, setSavingInterval] = useState(false);
+  const [period, setPeriod] = useState<'realtime' | '1h' | '24h'>('realtime');
+  const [historicalData, setHistoricalData] = useState<AgentPushSnapshot[] | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -1004,6 +1541,39 @@ export function AgentDetailPage() {
     return () => { socket.off('agentPush', handler); };
   }, [id]);
 
+  // Fetch historical heartbeat data when switching away from realtime
+  useEffect(() => {
+    const monitorId = snapshot?.monitorId;
+    if (period === 'realtime' || !monitorId) {
+      setHistoricalData(null);
+      return;
+    }
+    setLoadingHistory(true);
+    monitorsApi.getHeartbeatsByPeriod(monitorId, period as '1h' | '24h')
+      .then(heartbeats => {
+        const snapshots = heartbeats
+          .filter(hb => hb.value)
+          .map(hb => {
+            try {
+              const v = JSON.parse(hb.value!);
+              if (!v._full) return null;
+              return {
+                monitorId,
+                receivedAt: hb.createdAt,
+                metrics: v._full as AgentMetrics,
+                violations: v._violations ?? [],
+                overallStatus: (hb.status === 'up' || hb.status === 'alert') ? hb.status as 'up' | 'alert' : 'up',
+              } as AgentPushSnapshot;
+            } catch { return null; }
+          })
+          .filter((s): s is AgentPushSnapshot => s !== null)
+          .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
+        setHistoricalData(snapshots.length > 30 ? downsample(snapshots, 30) : snapshots);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingHistory(false));
+  }, [period, snapshot?.monitorId]);
+
   const handleSaveThresholds = async (t: AgentThresholds) => {
     await agentApi.updateDeviceThresholds(id, t);
     setThresholds(t);
@@ -1050,6 +1620,9 @@ export function AgentDetailPage() {
     ? `${device.osInfo.distro ?? device.osInfo.platform ?? ''} ${device.osInfo.release ?? ''}`.trim()
     : null;
 
+  // Data source for all chart tabs — realtime uses in-memory history, 1h/24h use fetched data
+  const displayData: AgentPushSnapshot[] = period === 'realtime' ? history : (historicalData ?? history);
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -1067,19 +1640,20 @@ export function AgentDetailPage() {
             </button>
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl font-bold text-text-primary">{device.hostname}</h1>
+                <h1 className="text-xl font-bold text-text-primary">{device.name ?? device.hostname}</h1>
                 <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${sc.text}`}>
                   <span className={`inline-block w-2.5 h-2.5 rounded-full ${sc.dot} ${sc.glow}`} />
                   {sc.label}
                 </span>
               </div>
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-text-muted">
-                {device.ip          && <span>{device.ip}</span>}
-                {osLabel            && <span>{osLabel}</span>}
+                {device.name         && <span className="font-mono">{device.hostname}</span>}
+                {device.ip           && <span>{device.ip}</span>}
+                {osLabel             && <span>{osLabel}</span>}
                 {device.osInfo?.arch && <span>{device.osInfo.arch}</span>}
                 {device.agentVersion && <span>Agent v{device.agentVersion}</span>}
-                {lastPush           && <span>Last push: {fmtRelTime(lastPush)}</span>}
-                {!snapshot          && <span className="text-yellow-400">Waiting for first push…</span>}
+                {lastPush            && <span>Last push: {fmtRelTime(lastPush)}</span>}
+                {!snapshot           && <span className="text-yellow-400">Waiting for first push…</span>}
                 {/* Interval editor */}
                 {!editingInterval ? (
                   <span className="flex items-center gap-1">
@@ -1111,7 +1685,29 @@ export function AgentDetailPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Period selector — only shown for non-overview tabs */}
+            {view !== 'overview' && (
+              <div className="flex items-center rounded-lg border border-border overflow-hidden text-xs">
+                {(['realtime', '1h', '24h'] as const).map(p => (
+                  <button key={p} onClick={() => setPeriod(p)}
+                    className={cn('px-2.5 py-1.5 font-medium transition-colors',
+                      period === p ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-hover'
+                    )}>
+                    {p === 'realtime' ? 'Live' : p}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Loading indicator for historical data */}
+            {loadingHistory && (
+              <span className="text-xs text-text-muted animate-pulse">Loading…</span>
+            )}
+            {/* Edit agent settings */}
+            <button onClick={() => setShowEdit(true)}
+              className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors" title="Edit agent settings">
+              <Settings size={15} />
+            </button>
             <button onClick={() => void loadData()}
               className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors" title="Refresh">
               <RefreshCw size={15} />
@@ -1141,7 +1737,11 @@ export function AgentDetailPage() {
 
         {/* View content */}
         {m && view === 'overview' && <OverviewView metrics={m} violations={violations} />}
-        {view === 'cpu' && <CpuView metrics={m ?? {}} history={history} />}
+        {view === 'cpu'    && <CpuView    metrics={m ?? {}} history={displayData} period={period} />}
+        {view === 'ram'    && <RamView    history={displayData} period={period} />}
+        {view === 'gpu'    && <GpuView    history={displayData} period={period} />}
+        {view === 'others' && <OthersView history={displayData} period={period} />}
+        {view === 'temps'  && <TempsView  history={displayData} period={period} />}
 
       </div>
 
@@ -1172,6 +1772,15 @@ export function AgentDetailPage() {
       {/* Threshold editor */}
       {showThresholds && (
         <ThresholdEditor thresholds={thresholds} onSave={handleSaveThresholds} onClose={() => setShowThresholds(false)} />
+      )}
+
+      {/* Agent edit modal */}
+      {showEdit && device && (
+        <AgentEditModal
+          device={device}
+          onSave={updated => setDevice(updated)}
+          onClose={() => setShowEdit(false)}
+        />
       )}
     </div>
   );

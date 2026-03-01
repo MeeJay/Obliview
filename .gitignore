@@ -12,6 +12,7 @@ coverage/
 .idea/
 *.tsbuildinfo
 *.bat
+*.sh
 
 # Claude Code internal files (conversation history, memory, etc.)
 .claude/

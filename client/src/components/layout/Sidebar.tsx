@@ -178,6 +178,10 @@ export function Sidebar() {
   const { tree } = useGroupStore();
 
   const [approvedDevices, setApprovedDevices] = useState<AgentDevice[]>([]);
+  // Real-time UP/ALERT/DOWN/INACTIVE status received via AGENT_STATUS_CHANGED events.
+  // Keyed by deviceId. Overrides the monitorStore lookup (which requires agentDeviceId
+  // to be populated in the store — not always reliable).
+  const [deviceStatuses, setDeviceStatuses] = useState<Map<number, string>>(new Map());
 
   // Layout preferences
   const [sidebarLayout, setSidebarLayout] = usePersisted<'stacked' | 'side-by-side'>('sidebar-layout', 'stacked');
@@ -249,19 +253,33 @@ export function Sidebar() {
       });
     };
 
+    const onStatusChanged = (data: { deviceId: number; status: string }) => {
+      setDeviceStatuses(prev => new Map(prev).set(data.deviceId, data.status));
+    };
+
     socket.on(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, onDeviceUpdated);
-    return () => { socket.off(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, onDeviceUpdated); };
+    socket.on(SOCKET_EVENTS.AGENT_STATUS_CHANGED, onStatusChanged);
+    return () => {
+      socket.off(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, onDeviceUpdated);
+      socket.off(SOCKET_EVENTS.AGENT_STATUS_CHANGED, onStatusChanged);
+    };
   }, [admin, loadDevices]);
 
-  /** Get the monitor status for an agent device */
+  /** Get the real-time monitor status for an agent device.
+   *  Prefers the AGENT_STATUS_CHANGED socket Map (always up-to-date),
+   *  falls back to monitorStore lookup (populated on initial load). */
   const getMonitorStatus = useCallback(
     (deviceId: number): MonitorStatus | undefined => {
+      // Direct socket-pushed status (most reliable, no agentDeviceId dependency)
+      const live = deviceStatuses.get(deviceId);
+      if (live) return live as MonitorStatus;
+      // Fallback: scan monitorStore for a monitor with matching agentDeviceId
       for (const m of monitors.values()) {
         if (m.agentDeviceId === deviceId) return m.status;
       }
       return undefined;
     },
-    [monitors],
+    [deviceStatuses, monitors],
   );
 
   const handleAgentDragEnd = useCallback(

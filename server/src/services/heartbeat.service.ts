@@ -193,6 +193,48 @@ export const heartbeatService = {
   },
 
   /**
+   * Get heartbeats for a monitor within an explicit date range, with optional downsampling.
+   * Used for the zoom-in feature in the chart.
+   */
+  async getByMonitorRange(
+    monitorId: number,
+    from: Date,
+    to: Date,
+    maxPoints: number = 500,
+  ): Promise<Heartbeat[]> {
+    const [{ count }] = await db('heartbeats')
+      .where({ monitor_id: monitorId })
+      .where('created_at', '>=', from)
+      .where('created_at', '<=', to)
+      .count('* as count');
+
+    const total = Number(count);
+
+    if (total <= maxPoints) {
+      const rows = await db<HeartbeatRow>('heartbeats')
+        .where({ monitor_id: monitorId })
+        .where('created_at', '>=', from)
+        .where('created_at', '<=', to)
+        .orderBy('created_at', 'asc');
+      return rows.map(rowToHeartbeat);
+    }
+
+    const nth = Math.ceil(total / maxPoints);
+    const result = await db.raw(`
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (ORDER BY created_at ASC) as rn
+        FROM heartbeats
+        WHERE monitor_id = ? AND created_at >= ? AND created_at <= ?
+      ) sub
+      WHERE rn % ? = 1 OR status != 'up'
+      ORDER BY created_at ASC
+      LIMIT ?
+    `, [monitorId, from, to, nth, maxPoints]);
+
+    return (result.rows as HeartbeatRow[]).map(rowToHeartbeat);
+  },
+
+  /**
    * Get heartbeats for a monitor since a given date, with optional downsampling.
    * Keeps all non-UP heartbeats to preserve incident visibility.
    */

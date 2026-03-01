@@ -583,6 +583,12 @@ export const agentService = {
         monitorId: monitor.id,
         newStatus: overallStatus,
       });
+      // Dedicated agent status event — includes deviceId so the sidebar can
+      // update the badge without a monitorStore lookup by agentDeviceId.
+      _io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, {
+        deviceId: device.id,
+        status: overallStatus,
+      });
     }
   },
 

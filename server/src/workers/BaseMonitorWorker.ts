@@ -210,6 +210,13 @@ export abstract class BaseMonitorWorker {
       return;
     }
 
+    // 'inactive' → 'up': the agent came back online after being off, but heartbeat monitoring
+    // was disabled — the user does not want a "recovered" ping for simply resuming data.
+    // Threshold violations (inactive → 'alert') still fire normally.
+    if (oldStatus === 'inactive' && newStatus === 'up') {
+      return;
+    }
+
     // Trigger notifications
     try {
       // Check if this monitor is covered by a group with groupNotifications

@@ -55,6 +55,18 @@ export const monitorsApi = {
     return res.data.data!;
   },
 
+  async getHeartbeatsByRange(
+    monitorId: number,
+    from: Date,
+    to: Date,
+  ): Promise<Heartbeat[]> {
+    const res = await apiClient.get<ApiResponse<Heartbeat[]>>(
+      `/monitors/${monitorId}/heartbeats`,
+      { params: { from: from.toISOString(), to: to.toISOString() } },
+    );
+    return res.data.data!;
+  },
+
   async getStats(
     monitorId: number,
     period: '1h' | '24h' | '7d' | '30d' | '365d' = '24h',

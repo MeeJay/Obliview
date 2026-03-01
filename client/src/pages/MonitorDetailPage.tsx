@@ -32,6 +32,8 @@ export function MonitorDetailPage() {
   const [loading, setLoading] = useState(!monitor);
   const [period, setPeriod] = useState('24h');
   const [periodHeartbeats, setPeriodHeartbeats] = useState<Heartbeat[]>([]);
+  const [zoomRange, setZoomRange] = useState<{ from: Date; to: Date } | null>(null);
+  const [zoomHeartbeats, setZoomHeartbeats] = useState<Heartbeat[]>([]);
 
   // Fetch heartbeat history on mount (for store)
   useEffect(() => {
@@ -54,7 +56,19 @@ export function MonitorDetailPage() {
       .getHeartbeatsByPeriod(monitorId, period as '1h' | '24h' | '7d' | '30d' | '365d')
       .then(setPeriodHeartbeats)
       .catch(() => setPeriodHeartbeats([]));
+    // Changing period always resets zoom
+    setZoomRange(null);
+    setZoomHeartbeats([]);
   }, [monitorId, period]);
+
+  // Fetch zoomed heartbeats when zoom range changes
+  useEffect(() => {
+    if (!zoomRange) return;
+    monitorsApi
+      .getHeartbeatsByRange(monitorId, zoomRange.from, zoomRange.to)
+      .then(setZoomHeartbeats)
+      .catch(() => setZoomHeartbeats([]));
+  }, [monitorId, zoomRange]);
 
   if (loading && !monitor) {
     return (
@@ -293,7 +307,9 @@ export function MonitorDetailPage() {
 
       {/* Period selector */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-text-secondary">History</h3>
+        <h3 className="text-sm font-medium text-text-secondary">
+          History{zoomRange && <span className="ml-2 text-xs text-cyan-400 font-normal">— zoomed</span>}
+        </h3>
         <PeriodSelector value={period} onChange={setPeriod} />
       </div>
 
@@ -309,10 +325,20 @@ export function MonitorDetailPage() {
           {monitor.type === 'value_watcher' ? 'Value History' : 'Response Time'}
         </h3>
         <HeartbeatChart
-          heartbeats={periodHeartbeats.length > 0 ? periodHeartbeats : heartbeats}
+          heartbeats={
+            zoomRange
+              ? zoomHeartbeats
+              : (periodHeartbeats.length > 0 ? periodHeartbeats : heartbeats)
+          }
           height={250}
           period={period}
           valueMode={monitor.type === 'value_watcher'}
+          onZoom={monitor.type !== 'value_watcher'
+            ? (from, to) => setZoomRange({ from, to })
+            : undefined}
+          isZoomed={!!zoomRange}
+          onZoomReset={() => { setZoomRange(null); setZoomHeartbeats([]); }}
+          customRange={zoomRange ?? undefined}
         />
       </div>
 

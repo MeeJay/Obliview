@@ -260,6 +260,19 @@ export const monitorsController = {
         if (!canRead) throw new AppError(403, 'Access denied');
       }
 
+      // Custom range (zoom): ?from=<ISO>&to=<ISO>
+      const fromStr = req.query.from as string | undefined;
+      const toStr   = req.query.to   as string | undefined;
+      if (fromStr && toStr) {
+        const fromDate = new Date(fromStr);
+        const toDate   = new Date(toStr);
+        if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+          const heartbeats = await heartbeatService.getByMonitorRange(monitorId, fromDate, toDate, 500);
+          res.json({ success: true, data: heartbeats });
+          return;
+        }
+      }
+
       if (period) {
         // Period-based fetch with downsampling
         const since = new Date();
