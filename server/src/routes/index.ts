@@ -25,6 +25,7 @@ router.use('/settings', settingsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/heartbeat', heartbeatRoutes);
 router.use('/users', usersRoutes);
+router.use('/profile/2fa', twoFactorRoutes); // must be before /profile (more specific first)
 router.use('/profile', profileRoutes);
 router.use('/teams', teamsRoutes);
 router.use('/agent', agentRoutes);
@@ -32,7 +33,6 @@ router.use('/admin', importExportRoutes);
 router.use('/remediation', remediationRoutes);
 router.use('/admin/smtp-servers', smtpServerRoutes);
 router.use('/admin/config', appConfigRoutes);
-router.use('/profile/2fa', twoFactorRoutes);
 router.use('/maintenance', maintenanceRoutes);
 
 export { router as routes };
