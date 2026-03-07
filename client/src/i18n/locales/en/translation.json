@@ -915,5 +915,26 @@
     "signedInAs": "Signed in as",
     "disableAlerts": "Disable live alerts",
     "enableAlerts": "Enable live alerts"
+  },
+  "tenant": {
+    "pageTitle": "Workspaces",
+    "pageDesc": "Manage tenants and their members for multi-tenant deployments.",
+    "create": "New Workspace",
+    "name": "Name",
+    "namePlaceholder": "My Organization",
+    "slug": "Slug",
+    "default": "default",
+    "confirmDelete": "Delete this workspace? All its data will be permanently removed.",
+    "noTenants": "No workspaces found.",
+    "createdAt": "Created",
+    "manageMembers": "Manage members",
+    "members": "Members",
+    "noMembers": "No members yet.",
+    "addMember": "Add",
+    "selectUser": "Select a user…",
+    "removeMember": "Remove from workspace",
+    "toggleRole": "Click to toggle admin / member role",
+    "roleAdmin": "admin",
+    "switchWorkspace": "Switch workspace"
   }
 }

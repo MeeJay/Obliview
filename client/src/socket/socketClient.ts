@@ -6,13 +6,13 @@ export function getSocket(): Socket | null {
   return socket;
 }
 
-export function connectSocket(userId: number): Socket {
+export function connectSocket(userId: number, tenantId?: number): Socket {
   if (socket?.connected) {
     return socket;
   }
 
   socket = io(window.location.origin, {
-    auth: { userId },
+    auth: { userId, tenantId },
     transports: ['websocket', 'polling'],
     withCredentials: true,
   });

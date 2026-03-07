@@ -11,6 +11,7 @@ interface SmtpServerRow {
   username: string;
   password: string;
   from_address: string;
+  tenant_id: number | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -30,8 +31,14 @@ function rowToServer(row: SmtpServerRow): SmtpServer {
 }
 
 export const smtpServerService = {
-  async list(): Promise<SmtpServer[]> {
-    const rows = await db<SmtpServerRow>('smtp_servers').orderBy('name');
+  async list(tenantId?: number): Promise<SmtpServer[]> {
+    const query = db<SmtpServerRow>('smtp_servers').orderBy('name');
+    if (tenantId !== undefined) {
+      query.where({ tenant_id: tenantId });
+    } else {
+      query.whereNull('tenant_id');
+    }
+    const rows = await query;
     return rows.map(rowToServer);
   },
 
@@ -48,6 +55,7 @@ export const smtpServerService = {
     username: string;
     password: string;
     fromAddress: string;
+    tenantId?: number;
   }): Promise<SmtpServer> {
     const [row] = await db<SmtpServerRow>('smtp_servers')
       .insert({
@@ -58,6 +66,7 @@ export const smtpServerService = {
         username: data.username,
         password: data.password,
         from_address: data.fromAddress,
+        tenant_id: data.tenantId ?? null,
       })
       .returning('*');
     return rowToServer(row);

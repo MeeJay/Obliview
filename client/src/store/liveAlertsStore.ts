@@ -9,6 +9,7 @@ export interface LiveAlert {
   message: string;
   navigateTo?: string;
   createdAt: number;
+  read: boolean;
 }
 
 interface LiveAlertsState {
@@ -23,10 +24,11 @@ interface LiveAlertsState {
    * is already in the list, it is skipped (the violation is already known to the user).
    * Omit `id` for one-off events (monitor up/down) — a random UUID is assigned.
    */
-  addAlert: (alert: Omit<LiveAlert, 'id' | 'createdAt'> & { id?: string }) => void;
+  addAlert: (alert: Omit<LiveAlert, 'id' | 'createdAt' | 'read'> & { id?: string }) => void;
+  markAlertRead: (id: string) => void;
+  markAllRead: () => void;
   removeAlert: (id: string) => void;
   clearAll: () => void;
-  markAllRead: () => void;
 }
 
 export const useLiveAlertsStore = create<LiveAlertsState>((set) => ({
@@ -43,13 +45,25 @@ export const useLiveAlertsStore = create<LiveAlertsState>((set) => ({
       if (alert.id && s.alerts.some((a) => a.id === id)) return s;
       return {
         alerts: [
-          { ...alert, id, createdAt: Date.now() },
+          { ...alert, id, read: false, createdAt: Date.now() },
           ...s.alerts,
         ].slice(0, 50),
         unreadCount: s.unreadCount + 1,
       };
     }),
-  removeAlert: (id) => set((s) => ({ alerts: s.alerts.filter((a) => a.id !== id) })),
+  markAlertRead: (id) =>
+    set((s) => {
+      const alerts = s.alerts.map((a) => a.id === id ? { ...a, read: true } : a);
+      return { alerts, unreadCount: alerts.filter((a) => !a.read).length };
+    }),
+  markAllRead: () =>
+    set((s) => ({
+      alerts: s.alerts.map((a) => ({ ...a, read: true })),
+      unreadCount: 0,
+    })),
+  removeAlert: (id) => set((s) => {
+    const alerts = s.alerts.filter((a) => a.id !== id);
+    return { alerts, unreadCount: alerts.filter((a) => !a.read).length };
+  }),
   clearAll: () => set({ alerts: [], unreadCount: 0 }),
-  markAllRead: () => set({ unreadCount: 0 }),
 }));

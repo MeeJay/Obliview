@@ -9,9 +9,9 @@ import type {
 } from '../validators/team.schema';
 
 export const teamsController = {
-  async list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const teams = await teamService.getAll();
+      const teams = await teamService.getAll(req.tenantId);
       res.json({ success: true, data: teams });
     } catch (err) {
       next(err);
@@ -38,7 +38,7 @@ export const teamsController = {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const data = req.body as CreateTeamInput;
-      const team = await teamService.create(data);
+      const team = await teamService.create(data, req.tenantId);
       res.status(201).json({ success: true, data: team });
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('unique')) {

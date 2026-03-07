@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   ChevronDown,
   CalendarClock,
+  Building2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/utils/cn';
@@ -185,6 +186,7 @@ export function Sidebar() {
     { label: t('nav.remediations'),  path: '/admin/remediations',   icon: <ShieldCheck size={18} />,   adminOnly: true },
     { label: t('nav.maintenance'),   path: '/admin/maintenance',    icon: <CalendarClock size={18} />, adminOnly: true },
     { label: t('nav.importExport'),  path: '/admin/import-export',  icon: <PackageOpen size={18} />,   adminOnly: true },
+    { label: t('tenant.pageTitle'),  path: '/admin/tenants',        icon: <Building2 size={18} />,     adminOnly: true },
     { label: t('nav.settings'),      path: '/settings',             icon: <Settings size={18} />,      adminOnly: true },
   ];
   const { openAddAgentModal } = useUiStore();

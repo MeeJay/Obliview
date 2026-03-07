@@ -31,6 +31,7 @@ interface ActionRow {
   type: string;
   config: unknown;
   enabled: boolean;
+  tenant_id: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -169,8 +170,8 @@ export const remediationService = {
 
   // ── Action CRUD ─────────────────────────────────────────────────────────────
 
-  async listActions(): Promise<RemediationAction[]> {
-    const rows = await db<ActionRow>('remediation_actions').orderBy('name');
+  async listActions(tenantId: number): Promise<RemediationAction[]> {
+    const rows = await db<ActionRow>('remediation_actions').where({ tenant_id: tenantId }).orderBy('name');
     return rows.map(rowToAction);
   },
 
@@ -179,7 +180,7 @@ export const remediationService = {
     return row ? rowToAction(row) : null;
   },
 
-  async createAction(data: CreateRemediationActionRequest): Promise<RemediationAction> {
+  async createAction(data: CreateRemediationActionRequest, tenantId: number): Promise<RemediationAction> {
     let cfg = { ...data.config };
 
     // Encrypt SSH credential on create
@@ -194,6 +195,7 @@ export const remediationService = {
         type: data.type,
         config: JSON.stringify(cfg) as unknown as Record<string, unknown>,
         enabled: data.enabled ?? true,
+        tenant_id: tenantId,
       })
       .returning('*');
     return rowToAction(row);

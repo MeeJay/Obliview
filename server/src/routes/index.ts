@@ -1,5 +1,8 @@
 import { Router } from 'express';
+import { requireAuth } from '../middleware/auth';
+import { requireTenant } from '../middleware/tenant';
 import authRoutes from './auth.routes';
+import tenantRoutes from './tenant.routes';
 import monitorsRoutes from './monitors.routes';
 import groupsRoutes from './groups.routes';
 import settingsRoutes from './settings.routes';
@@ -18,21 +21,36 @@ import maintenanceRoutes from './maintenance.routes';
 
 const router = Router();
 
+// ── Global (no tenant required) ────────────────────────────────────────────
 router.use('/auth', authRoutes);
-router.use('/monitors', monitorsRoutes);
-router.use('/groups', groupsRoutes);
-router.use('/settings', settingsRoutes);
-router.use('/notifications', notificationsRoutes);
-router.use('/heartbeat', heartbeatRoutes);
-router.use('/users', usersRoutes);
-router.use('/profile/2fa', twoFactorRoutes); // must be before /profile (more specific first)
-router.use('/profile', profileRoutes);
-router.use('/teams', teamsRoutes);
-router.use('/agent', agentRoutes);
-router.use('/admin', importExportRoutes);
-router.use('/remediation', remediationRoutes);
-router.use('/admin/smtp-servers', smtpServerRoutes);
+router.use('/heartbeat', heartbeatRoutes); // push monitors (no session)
+router.use('/agent', agentRoutes);          // agent push (authenticated via API key)
 router.use('/admin/config', appConfigRoutes);
-router.use('/maintenance', maintenanceRoutes);
+router.use('/profile/2fa', twoFactorRoutes); // must be before /profile
+
+// ── Tenant management (requireAuth but NOT requireTenant) ──────────────────
+// /api/tenants  (CRUD + member management)
+// /api/tenant/switch
+router.use('/tenants', tenantRoutes);
+router.use('/tenant', tenantRoutes);
+
+// ── Tenant-scoped routes (requireAuth + requireTenant) ─────────────────────
+const tenantRouter = Router();
+tenantRouter.use(requireAuth);
+tenantRouter.use(requireTenant);
+
+tenantRouter.use('/monitors', monitorsRoutes);
+tenantRouter.use('/groups', groupsRoutes);
+tenantRouter.use('/settings', settingsRoutes);
+tenantRouter.use('/notifications', notificationsRoutes);
+tenantRouter.use('/users', usersRoutes);
+tenantRouter.use('/profile', profileRoutes);
+tenantRouter.use('/teams', teamsRoutes);
+tenantRouter.use('/admin', importExportRoutes);
+tenantRouter.use('/remediation', remediationRoutes);
+tenantRouter.use('/admin/smtp-servers', smtpServerRoutes);
+tenantRouter.use('/maintenance', maintenanceRoutes);
+
+router.use('/', tenantRouter);
 
 export { router as routes };

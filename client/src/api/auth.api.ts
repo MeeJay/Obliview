@@ -15,8 +15,8 @@ export const authApi = {
     await apiClient.post('/auth/logout');
   },
 
-  async me(): Promise<{ user: User; permissions: UserPermissions; requires2faSetup: boolean }> {
-    const res = await apiClient.get<ApiResponse<{ user: User; permissions: UserPermissions; requires2faSetup: boolean }>>('/auth/me');
+  async me(): Promise<{ user: User; permissions: UserPermissions; requires2faSetup: boolean; currentTenantId?: number }> {
+    const res = await apiClient.get<ApiResponse<{ user: User; permissions: UserPermissions; requires2faSetup: boolean; currentTenantId?: number }>>('/auth/me');
     return res.data.data!;
   },
 

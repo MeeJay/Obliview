@@ -11,7 +11,7 @@ export const groupsController = {
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const isAdmin = req.session.role === 'admin';
-      const allGroups = await groupService.getAll();
+      const allGroups = await groupService.getAll(req.tenantId);
 
       if (isAdmin) {
         res.json({ success: true, data: allGroups });
@@ -35,7 +35,7 @@ export const groupsController = {
   async tree(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const isAdmin = req.session.role === 'admin';
-      const tree = await groupService.getTree();
+      const tree = await groupService.getTree(req.tenantId);
 
       if (isAdmin) {
         res.json({ success: true, data: tree });
@@ -89,7 +89,7 @@ export const groupsController = {
         if (!parent) throw new AppError(400, 'Parent group not found');
       }
 
-      const group = await groupService.create(data);
+      const group = await groupService.create(data, req.tenantId);
 
       // Auto-assign RW to creator's teams that have canCreate
       if (req.session.role !== 'admin') {
@@ -208,7 +208,7 @@ export const groupsController = {
       const isAdmin = req.session.role === 'admin';
       const visibleIds = await permissionService.getVisibleGroupIds(req.session.userId!, isAdmin);
 
-      const allGroups = await groupService.getAll();
+      const allGroups = await groupService.getAll(req.tenantId);
       const result: Record<number, { uptimePct: number; total: number; up: number }> = {};
 
       for (const group of allGroups) {

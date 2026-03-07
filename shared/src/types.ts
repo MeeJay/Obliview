@@ -763,3 +763,24 @@ export interface AddRemediationBindingRequest {
   triggerOn?: RemediationTrigger;
   cooldownSeconds?: number;
 }
+
+// ============================================
+// Tenant types (multi-tenancy)
+// ============================================
+export interface Tenant {
+  id: number;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantMembership {
+  tenantId: number;
+  userId: number;
+  role: 'admin' | 'member';
+}
+
+export interface TenantWithRole extends Tenant {
+  role: 'admin' | 'member';
+}

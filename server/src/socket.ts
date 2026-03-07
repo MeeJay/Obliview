@@ -16,8 +16,9 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   // Socket.io authentication middleware
   io.use(async (socket, next) => {
     try {
-      // The session userId is passed via auth handshake
+      // The session userId and currentTenantId are passed via auth handshake
       const userId = socket.handshake.auth?.userId as number | undefined;
+      const tenantId = socket.handshake.auth?.tenantId as number | undefined;
 
       if (!userId) {
         return next(new Error('Authentication required'));
@@ -29,6 +30,7 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
       }
 
       socket.data.user = user;
+      socket.data.tenantId = tenantId ?? 1;
       next();
     } catch (err) {
       next(new Error('Authentication failed'));
@@ -37,13 +39,18 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
 
   io.on('connection', (socket) => {
     const user = socket.data.user;
-    logger.info(`Socket connected: ${user.username} (id: ${user.id})`);
+    const tenantId: number = socket.data.tenantId;
+    logger.info(`Socket connected: ${user.username} (id: ${user.id}, tenant: ${tenantId})`);
 
     // Join user-specific room
     socket.join(`user:${user.id}`);
 
-    // Join role room
+    // Join tenant-scoped rooms
+    socket.join(`tenant:${tenantId}`);
     if (user.role === 'admin') {
+      socket.join(`tenant:${tenantId}:admin`);
+      // Keep legacy role:admin room so existing emits continue to work
+      // during gradual migration of all service emits to tenant rooms.
       socket.join('role:admin');
     }
 

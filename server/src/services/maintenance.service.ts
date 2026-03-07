@@ -24,6 +24,7 @@ interface MaintenanceWindowRow {
   last_notified_start_at: Date | null;
   last_notified_end_at: Date | null;
   active: boolean;
+  tenant_id: number;
   created_at: Date;
 }
 
@@ -166,8 +167,8 @@ let transitionTimer: ReturnType<typeof setInterval> | null = null;
 export const maintenanceService = {
   // ── CRUD ──────────────────────────────────────────────────────────────────
 
-  async list(filters?: { scopeType?: string; scopeId?: number }): Promise<MaintenanceWindow[]> {
-    const query = db<MaintenanceWindowRow>('maintenance_windows').orderBy('created_at', 'desc');
+  async list(tenantId: number, filters?: { scopeType?: string; scopeId?: number }): Promise<MaintenanceWindow[]> {
+    const query = db<MaintenanceWindowRow>('maintenance_windows').where({ tenant_id: tenantId }).orderBy('created_at', 'desc');
     if (filters?.scopeType) {
       query.where({ scope_type: filters.scopeType });
       // For 'global', scope_id is NULL — do not add a scopeId filter
@@ -202,6 +203,7 @@ export const maintenanceService = {
     lastNotifiedStartAt?: string | null;
     lastNotifiedEndAt?: string | null;
     active?: boolean;
+    tenantId: number;
   }): Promise<MaintenanceWindow> {
     const [row] = await db<MaintenanceWindowRow>('maintenance_windows')
       .insert({
@@ -219,6 +221,7 @@ export const maintenanceService = {
         timezone: data.timezone ?? 'UTC',
         notify_channel_ids: data.notifyChannelIds ?? [],
         active: data.active ?? true,
+        tenant_id: data.tenantId,
       })
       .returning('*');
     maintenanceCache.clear();

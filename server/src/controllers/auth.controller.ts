@@ -3,9 +3,16 @@ import { authService } from '../services/auth.service';
 import { appConfigService } from '../services/appConfig.service';
 import { twoFactorService } from '../services/twoFactor.service';
 import { permissionService } from '../services/permission.service';
+import { tenantService } from '../services/tenant.service';
 import { AppError } from '../middleware/errorHandler';
 import { config } from '../config';
 import type { LoginInput } from '../validators/auth.schema';
+
+/** Helper: resolve & store the first accessible tenant in the session. */
+async function setSessionTenant(req: Request, userId: number): Promise<void> {
+  const tenant = await tenantService.getFirstTenantForUser(userId);
+  req.session.currentTenantId = tenant?.id ?? 1;
+}
 
 export const authController = {
   async login(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -47,6 +54,7 @@ export const authController = {
       req.session.userId = user.id;
       req.session.username = user.username;
       req.session.role = user.role;
+      await setSessionTenant(req, user.id);
 
       res.json({ success: true, data: { user } });
     } catch (err) {
@@ -76,6 +84,11 @@ export const authController = {
         throw new AppError(401, 'User not found');
       }
 
+      // Repair missing currentTenantId (e.g. sessions from before Phase 13)
+      if (!req.session.currentTenantId) {
+        await setSessionTenant(req, user.id);
+      }
+
       const isAdmin = user.role === 'admin';
       const permissions = await permissionService.getUserPermissions(user.id, isAdmin);
 
@@ -90,7 +103,7 @@ export const authController = {
 
       res.json({
         success: true,
-        data: { user, permissions, requires2faSetup },
+        data: { user, permissions, requires2faSetup, currentTenantId: req.session.currentTenantId },
       });
     } catch (err) {
       next(err);

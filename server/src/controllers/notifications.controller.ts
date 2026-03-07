@@ -22,9 +22,9 @@ export const notificationsController = {
   },
 
   // GET /api/notifications/channels
-  async listChannels(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async listChannels(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const channels = await notificationService.getAllChannels();
+      const channels = await notificationService.getAllChannels(req.tenantId);
       res.json({ success: true, data: channels });
     } catch (err) {
       next(err);
@@ -50,7 +50,7 @@ export const notificationsController = {
       const channel = await notificationService.createChannel({
         ...data,
         createdBy: req.session.userId!,
-      });
+      }, req.tenantId);
       res.status(201).json({ success: true, data: channel });
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('Unknown notification')) {

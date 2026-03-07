@@ -5,7 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 export const smtpServerController = {
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const servers = await smtpServerService.list();
+      const servers = await smtpServerService.list(req.tenantId);
       res.json({ success: true, data: servers });
     } catch (err) { next(err); }
   },
@@ -16,7 +16,7 @@ export const smtpServerController = {
       if (!name || !host || !port || !username || !password || !fromAddress) {
         throw new AppError(400, 'Missing required fields');
       }
-      const server = await smtpServerService.create({ name, host, port: Number(port), secure: Boolean(secure), username, password, fromAddress });
+      const server = await smtpServerService.create({ name, host, port: Number(port), secure: Boolean(secure), username, password, fromAddress, tenantId: req.tenantId });
       res.status(201).json({ success: true, data: server });
     } catch (err) { next(err); }
   },

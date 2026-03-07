@@ -229,18 +229,19 @@ export const agentService = {
 
   // ── API Keys ────────────────────────────────────────────
 
-  async listKeys(): Promise<AgentApiKey[]> {
+  async listKeys(tenantId: number): Promise<AgentApiKey[]> {
     const rows = await db('agent_api_keys as k')
       .leftJoin('agent_devices as d', 'k.id', 'd.api_key_id')
+      .where({ 'k.tenant_id': tenantId })
       .groupBy('k.id')
       .select('k.*', db.raw('COUNT(d.id) as device_count'))
       .orderBy('k.created_at', 'desc') as AgentApiKeyRow[];
     return rows.map(rowToApiKey);
   },
 
-  async createKey(name: string, createdBy: number): Promise<AgentApiKey> {
+  async createKey(name: string, createdBy: number, tenantId: number): Promise<AgentApiKey> {
     const [row] = await db('agent_api_keys')
-      .insert({ name, created_by: createdBy })
+      .insert({ name, created_by: createdBy, tenant_id: tenantId })
       .returning('*') as AgentApiKeyRow[];
     return rowToApiKey(row);
   },
@@ -252,11 +253,12 @@ export const agentService = {
 
   // ── Devices ─────────────────────────────────────────────
 
-  async listDevices(status?: AgentDevice['status']): Promise<AgentDevice[]> {
+  async listDevices(tenantId: number, status?: AgentDevice['status']): Promise<AgentDevice[]> {
     // LEFT JOIN to fetch agent_group_config in one round-trip so resolvedSettings
     // can be computed without N+1 queries.
     const query = db('agent_devices as d')
       .leftJoin('monitor_groups as g', 'g.id', 'd.group_id')
+      .where({ 'd.tenant_id': tenantId })
       .select(
         'd.*',
         db.raw('g.agent_group_config as _group_agent_config'),
@@ -581,6 +583,7 @@ export const agentService = {
 
   async handlePush(
     apiKeyId: number,
+    tenantId: number,
     deviceUuid: string,
     clientIp: string,
     payload: AgentPushPayload,
@@ -597,6 +600,7 @@ export const agentService = {
           os_info: payload.osInfo ? JSON.stringify(payload.osInfo) : null,
           agent_version: payload.agentVersion,
           api_key_id: apiKeyId,
+          tenant_id: tenantId,
           status: 'pending',
           check_interval_seconds: 300, // pending: check every 5min
         })

@@ -24,6 +24,7 @@ import { DownloadPage } from '@/pages/DownloadPage';
 import { ImportExportPage } from '@/pages/ImportExportPage';
 import { AdminRemediationsPage } from '@/pages/AdminRemediationsPage';
 import { AdminMaintenancePage } from '@/pages/AdminMaintenancePage';
+import { AdminTenantsPage } from '@/pages/AdminTenantsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import '@/i18n';
 
@@ -65,6 +66,7 @@ export default function App() {
               <Route path="/admin/import-export" element={<ImportExportPage />} />
               <Route path="/admin/remediations" element={<AdminRemediationsPage />} />
               <Route path="/admin/maintenance" element={<AdminMaintenancePage />} />
+              <Route path="/admin/tenants" element={<AdminTenantsPage />} />
               <Route path="/agents/:deviceId" element={<AgentDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>

@@ -43,7 +43,7 @@ export const maintenanceController = {
       if (typeof scopeType === 'string') filters.scopeType = scopeType;
       if (typeof scopeId === 'string') filters.scopeId = Number(scopeId);
 
-      const windows = await maintenanceService.list(filters);
+      const windows = await maintenanceService.list(req.tenantId, filters);
       const enriched = await Promise.all(windows.map(enrichWindow));
       return res.json({ success: true, data: enriched });
     } catch (err) {
@@ -84,6 +84,7 @@ export const maintenanceController = {
       }
 
       const created = await maintenanceService.create({
+        tenantId: req.tenantId,
         name: body.name,
         scopeType: body.scopeType,
         scopeId: body.scopeType === 'global' ? null : (body.scopeId ?? null),

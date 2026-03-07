@@ -96,12 +96,18 @@ export class AgentMonitorWorker extends BaseMonitorWorker {
     // regardless of whether the BaseMonitorWorker will emit MONITOR_STATUS_CHANGE
     // (which only fires on transitions after retries are exhausted).
     const snapshot = agentPushData.get(agentDeviceId);
-    this.io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, {
+    const agentStatusPayload = {
       deviceId: agentDeviceId,
       status: result.status,
       violations: snapshot?.violations ?? [],
       violationKeys: snapshot?.violationKeys ?? [],
-    });
+    };
+    // Emit to tenant-scoped admin room (primary) and legacy 'role:admin' for backward compat.
+    const tenantId = await this.resolveTenantId();
+    if (tenantId !== null) {
+      this.io.to(`tenant:${tenantId}:admin`).emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, agentStatusPayload);
+    }
+    this.io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, agentStatusPayload);
 
     return result;
   }

@@ -49,10 +49,23 @@ export abstract class BaseMonitorWorker {
   protected confirmedStatus: MonitorStatus = 'pending';
   /** Unix-ms timestamp of the last problem notification sent (for cooldown check) */
   protected lastProblemNotifiedAt: number = 0;
+  /** Tenant ID for scoped Socket.io room emissions (null until resolved) */
+  protected tenantId: number | null = null;
 
   constructor(config: MonitorConfig, io: SocketIOServer) {
     this.config = config;
     this.io = io;
+  }
+
+  /** Resolve and cache the tenant_id for this monitor from the DB. */
+  protected async resolveTenantId(): Promise<number | null> {
+    if (this.tenantId !== null) return this.tenantId;
+    const row = await db('monitors')
+      .where({ id: this.config.id })
+      .select('tenant_id')
+      .first() as { tenant_id: number | null } | undefined;
+    this.tenantId = row?.tenant_id ?? null;
+    return this.tenantId;
   }
 
   async start(): Promise<void> {
@@ -381,7 +394,13 @@ export abstract class BaseMonitorWorker {
    * Admins always receive it. Non-admins receive it based on team permissions.
    */
   private async emitToVisibleUsers(event: string, payload: unknown): Promise<void> {
-    // Always send to admins
+    const tenantId = await this.resolveTenantId();
+
+    // Always send to admins — emit to the tenant-scoped admin room (primary)
+    // and to the legacy 'role:admin' room for backward compatibility.
+    if (tenantId !== null) {
+      this.io.to(`tenant:${tenantId}:admin`).emit(event, payload);
+    }
     this.io.to('role:admin').emit(event, payload);
 
     // Get non-admin user IDs with access to this monitor via team permissions

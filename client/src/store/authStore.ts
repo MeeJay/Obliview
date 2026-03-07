@@ -4,6 +4,7 @@ import { authApi, type LoginResult } from '../api/auth.api';
 import { connectSocket, disconnectSocket } from '../socket/socketClient';
 import { useLiveAlertsStore } from './liveAlertsStore';
 import { setLanguage } from '../i18n';
+import { useTenantStore } from './tenantStore';
 
 function syncPreferencesToStore(user: User) {
   const prefs = user.preferences;
@@ -59,11 +60,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isLoading: false });
       syncPreferencesToStore(user);
       connectSocket(user.id);
+      useTenantStore.getState().fetchTenants();
       // Fetch permissions in the background; failure is non-fatal here.
       authApi.me()
-        .then(({ permissions, user: fullUser, requires2faSetup }) => {
+        .then(({ permissions, user: fullUser, requires2faSetup, currentTenantId }) => {
           set({ permissions, requires2faSetup: requires2faSetup ?? false });
           syncPreferencesToStore(fullUser);
+          if (currentTenantId != null) {
+            useTenantStore.setState({ currentTenantId });
+          }
         })
         .catch(() => { /* non-critical — permissions will load on next checkSession */ });
       return result;
@@ -95,10 +100,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   checkSession: async () => {
     try {
-      const { user, permissions, requires2faSetup } = await authApi.me();
+      const { user, permissions, requires2faSetup, currentTenantId } = await authApi.me();
       set({ user, permissions, requires2faSetup: requires2faSetup ?? false, isInitialized: true });
       syncPreferencesToStore(user);
-      connectSocket(user.id);
+      connectSocket(user.id, currentTenantId ?? undefined);
+      useTenantStore.getState().fetchTenants();
+      if (currentTenantId != null) {
+        useTenantStore.setState({ currentTenantId });
+      }
     } catch {
       set({ user: null, permissions: null, requires2faSetup: false, isInitialized: true });
     }

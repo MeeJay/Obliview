@@ -65,10 +65,14 @@ interface MonitorRow {
 }
 
 /** Base query that LEFT JOINs agent_devices to populate agent_device_name. */
-function monitorBaseQuery() {
-  return db('monitors')
+function monitorBaseQuery(tenantId?: number) {
+  const q = db('monitors')
     .leftJoin('agent_devices as ad', 'monitors.agent_device_id', 'ad.id')
     .select<MonitorRow[]>('monitors.*', db.raw('ad.name as agent_device_name'));
+  if (tenantId !== undefined) {
+    q.where('monitors.tenant_id', tenantId);
+  }
+  return q;
 }
 
 function rowToMonitor(row: MonitorRow): Monitor {
@@ -195,14 +199,14 @@ function monitorToRow(data: Partial<Monitor>): Record<string, unknown> {
 }
 
 export const monitorService = {
-  async getAll(): Promise<Monitor[]> {
-    const rows = await monitorBaseQuery().orderBy('monitors.name');
+  async getAll(tenantId: number): Promise<Monitor[]> {
+    const rows = await monitorBaseQuery(tenantId).orderBy('monitors.name');
     return rows.map(rowToMonitor);
   },
 
-  async getByIds(ids: number[]): Promise<Monitor[]> {
+  async getByIds(ids: number[], tenantId?: number): Promise<Monitor[]> {
     if (ids.length === 0) return [];
-    const rows = await monitorBaseQuery().whereIn('monitors.id', ids).orderBy('monitors.name');
+    const rows = await monitorBaseQuery(tenantId).whereIn('monitors.id', ids).orderBy('monitors.name');
     return rows.map(rowToMonitor);
   },
 
@@ -220,9 +224,10 @@ export const monitorService = {
     return rowToMonitor(row);
   },
 
-  async create(data: Partial<Monitor>, createdBy: number): Promise<Monitor> {
+  async create(data: Partial<Monitor>, createdBy: number, tenantId: number): Promise<Monitor> {
     const rowData = monitorToRow(data);
     rowData.created_by = createdBy;
+    rowData.tenant_id = tenantId;
 
     // Generate push token for push monitors
     if (data.type === 'push') {

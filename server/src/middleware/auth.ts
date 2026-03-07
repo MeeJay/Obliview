@@ -7,6 +7,7 @@ declare module 'express-session' {
     userId: number;
     username: string;
     role: string;
+    currentTenantId: number;
   }
 }
 

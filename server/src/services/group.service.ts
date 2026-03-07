@@ -11,6 +11,7 @@ interface GroupRow {
   is_general: boolean;
   group_notifications: boolean;
   kind: string;
+  tenant_id: number;
   agent_thresholds?: AgentThresholds | null;
   agent_group_config?: AgentGroupConfig | null;
   created_at: Date;
@@ -59,8 +60,8 @@ async function ensureUniqueSlug(slug: string, excludeId?: number): Promise<strin
 }
 
 export const groupService = {
-  async getAll(): Promise<MonitorGroup[]> {
-    const rows = await db<GroupRow>('monitor_groups').orderBy('sort_order').orderBy('name');
+  async getAll(tenantId: number): Promise<MonitorGroup[]> {
+    const rows = await db<GroupRow>('monitor_groups').where({ tenant_id: tenantId }).orderBy('sort_order').orderBy('name');
     return rows.map(rowToGroup);
   },
 
@@ -77,7 +78,7 @@ export const groupService = {
     isGeneral?: boolean;
     groupNotifications?: boolean;
     kind?: 'monitor' | 'agent';
-  }): Promise<MonitorGroup> {
+  }, tenantId: number): Promise<MonitorGroup> {
     const slug = await ensureUniqueSlug(slugify(data.name));
 
     const [row] = await db<GroupRow>('monitor_groups')
@@ -90,6 +91,7 @@ export const groupService = {
         is_general: data.isGeneral ?? false,
         group_notifications: data.groupNotifications ?? false,
         kind: data.kind ?? 'monitor',
+        tenant_id: tenantId,
       })
       .returning('*');
 
@@ -230,8 +232,8 @@ export const groupService = {
     return rows.map(rowToGroup);
   },
 
-  async getTree(): Promise<GroupTreeNode[]> {
-    const allGroups = await this.getAll();
+  async getTree(tenantId: number): Promise<GroupTreeNode[]> {
+    const allGroups = await this.getAll(tenantId);
     const groupMap = new Map<number, GroupTreeNode>();
 
     // Initialize nodes

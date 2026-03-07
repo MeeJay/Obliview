@@ -11,7 +11,7 @@ import type {
 // ── Actions ────────────────────────────────────────────────────────────────────
 
 export async function listActions(req: Request, res: Response) {
-  const actions = await remediationService.listActions();
+  const actions = await remediationService.listActions(req.tenantId);
   res.json({ data: actions });
 }
 
@@ -21,7 +21,7 @@ export async function createAction(req: Request, res: Response) {
     res.status(400).json({ error: 'name, type and config are required' });
     return;
   }
-  const action = await remediationService.createAction(body);
+  const action = await remediationService.createAction(body, req.tenantId);
   res.status(201).json({ data: action });
 }
 

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
 import { Button } from '@/components/common/Button';
 import { NotificationCenter } from './NotificationCenter';
+import { TenantSwitcher } from './TenantSwitcher';
 
 /** True when running inside the Obliview native desktop app (gear overlay sets this). */
 const isNativeApp = typeof window !== 'undefined' &&
@@ -24,6 +25,9 @@ export function Header() {
         >
           <Menu size={20} />
         </button>
+
+        {/* Tenant switcher — hidden when single-tenant (tenants.length <= 1) */}
+        <TenantSwitcher />
       </div>
 
       <div className="flex items-center gap-4">

@@ -9,8 +9,9 @@ import type { AgentThresholds } from '@obliview/shared';
 
 export async function agentPush(req: Request, res: Response): Promise<void> {
   try {
-    // agentApiKeyId is set by agentAuth middleware
-    const agentApiKeyId = (req as unknown as { agentApiKeyId: number }).agentApiKeyId;
+    // agentApiKeyId and agentTenantId are set by agentAuth middleware
+    const agentApiKeyId = (req as unknown as { agentApiKeyId: number; agentTenantId: number }).agentApiKeyId;
+    const agentTenantId = (req as unknown as { agentApiKeyId: number; agentTenantId: number }).agentTenantId;
     const deviceUuid = req.headers['x-device-uuid'] as string | undefined;
 
     if (!deviceUuid) {
@@ -25,6 +26,7 @@ export async function agentPush(req: Request, res: Response): Promise<void> {
 
     const result = await agentService.handlePush(
       agentApiKeyId,
+      agentTenantId,
       deviceUuid,
       clientIp,
       req.body,
@@ -172,8 +174,8 @@ export function agentInstallerWindowsMsi(_req: Request, res: Response): void {
 
 // ── Admin: API Keys ──────────────────────────────────────────────────────────
 
-export async function listKeys(_req: Request, res: Response): Promise<void> {
-  const keys = await agentService.listKeys();
+export async function listKeys(req: Request, res: Response): Promise<void> {
+  const keys = await agentService.listKeys(req.tenantId);
   res.json({ success: true, data: keys });
 }
 
@@ -184,7 +186,7 @@ export async function createKey(req: Request, res: Response): Promise<void> {
     return;
   }
   const userId = req.session?.userId ?? 0;
-  const key = await agentService.createKey(name.trim(), userId);
+  const key = await agentService.createKey(name.trim(), userId, req.tenantId);
   res.status(201).json({ success: true, data: key });
 }
 
@@ -215,6 +217,7 @@ export async function listDevices(req: Request, res: Response): Promise<void> {
   const status = req.query.status as string | undefined;
   const validStatuses = ['pending', 'approved', 'refused', 'suspended'];
   const devices = await agentService.listDevices(
+    req.tenantId,
     validStatuses.includes(status ?? '') ? (status as 'pending' | 'approved' | 'refused' | 'suspended') : undefined,
   );
 

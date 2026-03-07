@@ -17,9 +17,9 @@ export const monitorsController = {
 
       let monitors;
       if (visibleIds === 'all') {
-        monitors = await monitorService.getAll();
+        monitors = await monitorService.getAll(req.tenantId);
       } else {
-        monitors = await monitorService.getByIds(visibleIds);
+        monitors = await monitorService.getByIds(visibleIds, req.tenantId);
       }
 
       // Batch-resolve maintenance state for all monitors (single DB round-trip)
@@ -62,7 +62,7 @@ export const monitorsController = {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const data = req.body as CreateMonitorInput;
-      const monitor = await monitorService.create(data, req.session.userId!);
+      const monitor = await monitorService.create(data, req.session.userId!, req.tenantId);
 
       // Auto-assign RW to creator's teams that have canCreate
       if (req.session.role !== 'admin') {

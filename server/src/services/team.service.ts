@@ -6,6 +6,7 @@ interface TeamRow {
   name: string;
   description: string | null;
   can_create: boolean;
+  tenant_id: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -40,8 +41,8 @@ function rowToPermission(row: PermissionRow): TeamPermission {
 }
 
 export const teamService = {
-  async getAll(): Promise<UserTeam[]> {
-    const rows = await db<TeamRow>('user_teams').orderBy('name');
+  async getAll(tenantId: number): Promise<UserTeam[]> {
+    const rows = await db<TeamRow>('user_teams').where({ tenant_id: tenantId }).orderBy('name');
     return rows.map(rowToTeam);
   },
 
@@ -50,12 +51,13 @@ export const teamService = {
     return row ? rowToTeam(row) : null;
   },
 
-  async create(data: { name: string; description?: string | null; canCreate?: boolean }): Promise<UserTeam> {
+  async create(data: { name: string; description?: string | null; canCreate?: boolean }, tenantId: number): Promise<UserTeam> {
     const [row] = await db<TeamRow>('user_teams')
       .insert({
         name: data.name,
         description: data.description ?? null,
         can_create: data.canCreate ?? false,
+        tenant_id: tenantId,
       })
       .returning('*');
     return rowToTeam(row);

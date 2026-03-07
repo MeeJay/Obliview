@@ -3,6 +3,7 @@ import { db } from '../db';
 import { twoFactorService } from '../services/twoFactor.service';
 import { appConfigService } from '../services/appConfig.service';
 import { authService } from '../services/auth.service';
+import { tenantService } from '../services/tenant.service';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 
@@ -145,6 +146,10 @@ export const twoFactorController = {
       req.session.role = row.role;
       delete req.session.pendingMfaUserId;
       delete req.session.pendingEmailOtp;
+
+      // Set tenant in session
+      const firstTenant = await tenantService.getFirstTenantForUser(row.id);
+      req.session.currentTenantId = firstTenant?.id ?? 1;
 
       const user = await authService.getUserById(row.id);
       res.json({ success: true, data: { user } });

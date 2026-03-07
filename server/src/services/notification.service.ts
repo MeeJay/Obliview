@@ -13,6 +13,7 @@ interface ChannelRow {
   config: Record<string, unknown>;
   is_enabled: boolean;
   created_by: number | null;
+  tenant_id: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -51,8 +52,8 @@ function rowToBinding(row: BindingRow): NotificationBinding {
 export const notificationService = {
   // ── Channel CRUD ──
 
-  async getAllChannels(): Promise<NotificationChannel[]> {
-    const rows = await db<ChannelRow>('notification_channels').orderBy('name');
+  async getAllChannels(tenantId: number): Promise<NotificationChannel[]> {
+    const rows = await db<ChannelRow>('notification_channels').where({ tenant_id: tenantId }).orderBy('name');
     return rows.map(rowToChannel);
   },
 
@@ -67,7 +68,7 @@ export const notificationService = {
     config: Record<string, unknown>;
     isEnabled?: boolean;
     createdBy?: number;
-  }): Promise<NotificationChannel> {
+  }, tenantId: number): Promise<NotificationChannel> {
     const plugin = getPlugin(data.type);
     if (!plugin) throw new Error(`Unknown notification type: ${data.type}`);
 
@@ -78,6 +79,7 @@ export const notificationService = {
         config: JSON.stringify(data.config) as unknown as Record<string, unknown>,
         is_enabled: data.isEnabled ?? true,
         created_by: data.createdBy ?? null,
+        tenant_id: tenantId,
       })
       .returning('*');
 

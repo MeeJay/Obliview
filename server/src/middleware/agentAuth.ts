@@ -26,6 +26,7 @@ export async function agentAuth(req: Request, res: Response, next: NextFunction)
     .update({ last_used_at: new Date() })
     .catch(() => {});
 
-  (req as Request & { agentApiKeyId: number }).agentApiKeyId = keyRow.id;
+  (req as Request & { agentApiKeyId: number; agentTenantId: number }).agentApiKeyId = keyRow.id;
+  (req as Request & { agentApiKeyId: number; agentTenantId: number }).agentTenantId = keyRow.tenant_id;
   next();
 }

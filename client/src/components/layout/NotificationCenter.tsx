@@ -22,7 +22,7 @@ function timeAgo(ts: number): string {
 
 export function NotificationCenter() {
   const [open, setOpen] = useState(false);
-  const { alerts, unreadCount, enabled, setEnabled, clearAll, markAllRead, removeAlert } = useLiveAlertsStore();
+  const { alerts, unreadCount, enabled, setEnabled, clearAll, markAllRead, markAlertRead, removeAlert } = useLiveAlertsStore();
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -42,12 +42,8 @@ export function NotificationCenter() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  // Mark as read when panel is opened
-  useEffect(() => {
-    if (open && unreadCount > 0) markAllRead();
-  }, [open, unreadCount, markAllRead]);
-
-  const handleAlertClick = (navigateTo?: string) => {
+  const handleAlertClick = (id: string, navigateTo?: string) => {
+    markAlertRead(id);
     if (navigateTo) {
       setOpen(false);
       navigate(navigateTo);
@@ -86,23 +82,23 @@ export function NotificationCenter() {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-text-primary">Notifications</h3>
               <div className="flex items-center gap-2">
+                {alerts.some((a) => !a.read) && (
+                  <button
+                    onClick={markAllRead}
+                    title="Mark all as read"
+                    className="text-text-muted hover:text-text-primary transition-colors"
+                  >
+                    <CheckCheck size={14} />
+                  </button>
+                )}
                 {alerts.length > 0 && (
-                  <>
-                    <button
-                      onClick={markAllRead}
-                      title="Mark all as read"
-                      className="text-text-muted hover:text-text-primary transition-colors"
-                    >
-                      <CheckCheck size={14} />
-                    </button>
-                    <button
-                      onClick={clearAll}
-                      title="Clear all"
-                      className="text-text-muted hover:text-text-primary transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
+                  <button
+                    onClick={clearAll}
+                    title="Clear all"
+                    className="text-text-muted hover:text-text-primary transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 )}
                 <button
                   onClick={() => setOpen(false)}
@@ -152,15 +148,22 @@ export function NotificationCenter() {
                     className={cn(
                       'relative flex items-start gap-3 px-4 py-3 border-l-4 transition-colors',
                       styles.bar,
+                      alert.read ? 'opacity-40' : 'opacity-100',
                       alert.navigateTo && 'cursor-pointer hover:bg-bg-hover',
                     )}
-                    onClick={() => handleAlertClick(alert.navigateTo)}
+                    onClick={() => handleAlertClick(alert.id, alert.navigateTo)}
                   >
                     <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', styles.dot)} />
                     <div className="flex-1 min-w-0">
-                      <p className={cn('text-sm font-semibold truncate', styles.title)}>
-                        {alert.title}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className={cn('text-sm font-semibold truncate', styles.title)}>
+                          {alert.title}
+                        </p>
+                        {/* Unread indicator dot */}
+                        {!alert.read && (
+                          <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-accent" />
+                        )}
+                      </div>
                       <p className="text-xs text-text-muted mt-0.5 truncate">
                         {alert.message}
                       </p>
