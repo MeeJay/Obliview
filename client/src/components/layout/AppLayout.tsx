@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
@@ -9,11 +9,30 @@ import { useUiStore } from '@/store/uiStore';
 import { cn } from '@/utils/cn';
 
 export function AppLayout() {
-  const { sidebarOpen, sidebarWidth, setSidebarWidth } = useUiStore();
+  const { sidebarOpen, sidebarWidth, setSidebarWidth, sidebarFloating } = useUiStore();
   const dragging = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
 
+  // ── Floating sidebar visibility ───────────────────────────────────────────
+  const [floatVisible, setFloatVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset floating visibility whenever the mode is toggled off
+  useEffect(() => {
+    if (!sidebarFloating) setFloatVisible(false);
+  }, [sidebarFloating]);
+
+  const showFloat = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    setFloatVisible(true);
+  }, []);
+
+  const hideFloat = useCallback(() => {
+    hideTimer.current = setTimeout(() => setFloatVisible(false), 150);
+  }, []);
+
+  // ── Resize handle ─────────────────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -45,24 +64,58 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg-primary">
-      {/* Sidebar */}
-      <div
-        className={cn(
-          'flex-shrink-0 transition-all duration-200 relative',
-          !sidebarOpen && 'w-0 overflow-hidden',
-        )}
-        style={sidebarOpen ? { width: `${sidebarWidth}px` } : undefined}
-      >
-        <Sidebar />
 
-        {/* Resize handle */}
-        {sidebarOpen && (
+      {sidebarFloating ? (
+        <>
+          {/* Invisible hover-trigger strip on the far left edge of the viewport.
+              Wide enough to be comfortable (8 px) but visually imperceptible. */}
           <div
-            onMouseDown={handleMouseDown}
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 transition-colors z-10"
+            className="fixed left-0 top-0 h-full z-[51]"
+            style={{ width: '8px' }}
+            onMouseEnter={showFloat}
           />
-        )}
-      </div>
+
+          {/* Floating sidebar panel — slides in from left on hover */}
+          <div
+            className={cn(
+              'fixed left-0 top-0 h-full z-50',
+              'transition-transform duration-200 ease-in-out',
+              'shadow-[4px_0_24px_0_rgba(0,0,0,0.35)]',
+              floatVisible ? 'translate-x-0' : '-translate-x-full',
+            )}
+            style={{ width: `${sidebarWidth}px` }}
+            onMouseEnter={showFloat}
+            onMouseLeave={hideFloat}
+          >
+            <Sidebar />
+
+            {/* Resize handle — still usable in floating mode */}
+            <div
+              onMouseDown={handleMouseDown}
+              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 transition-colors z-10"
+            />
+          </div>
+        </>
+      ) : (
+        /* ── Normal pinned sidebar ── */
+        <div
+          className={cn(
+            'flex-shrink-0 transition-all duration-200 relative',
+            !sidebarOpen && 'w-0 overflow-hidden',
+          )}
+          style={sidebarOpen ? { width: `${sidebarWidth}px` } : undefined}
+        >
+          <Sidebar />
+
+          {/* Resize handle */}
+          {sidebarOpen && (
+            <div
+              onMouseDown={handleMouseDown}
+              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 transition-colors z-10"
+            />
+          )}
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
