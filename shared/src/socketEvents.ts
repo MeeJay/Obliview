@@ -37,6 +37,10 @@ export const SOCKET_EVENTS = {
   // Maintenance events
   /** Emitted when a maintenance window is created, updated, or deleted */
   MAINTENANCE_CHANGED: 'maintenance:changed',
+
+  // Live alert / notification events
+  /** Emitted to tenant:{tenantId}:notifications when a new DB-backed alert is created */
+  NOTIFICATION_NEW: 'notification:new',
 } as const;
 
 // Client → Server events

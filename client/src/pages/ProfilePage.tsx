@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 export function ProfilePage() {
   const { t } = useTranslation();
   const { user: sessionUser, requires2faSetup } = useAuthStore();
-  const { enabled: alertEnabled, position: alertPosition, setEnabled, setPosition } = useLiveAlertsStore();
+  const { localEnabled: alertEnabled, position: alertPosition, setEnabled, setPosition } = useLiveAlertsStore();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');

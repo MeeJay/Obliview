@@ -798,5 +798,26 @@
     "signedInAs": "Connecté en tant que",
     "disableAlerts": "Désactiver les alertes en direct",
     "enableAlerts": "Activer les alertes en direct"
+  },
+  "tenant": {
+    "pageTitle": "Espaces de travail",
+    "pageDesc": "Gérez les espaces de travail et leurs membres pour les déploiements multi-locataires.",
+    "create": "Nouvel espace de travail",
+    "name": "Nom",
+    "namePlaceholder": "Mon organisation",
+    "slug": "Identifiant",
+    "default": "défaut",
+    "confirmDelete": "Supprimer cet espace de travail ? Toutes ses données seront définitivement supprimées.",
+    "noTenants": "Aucun espace de travail trouvé.",
+    "createdAt": "Créé le",
+    "manageMembers": "Gérer les membres",
+    "members": "Membres",
+    "noMembers": "Aucun membre pour l'instant.",
+    "addMember": "Ajouter",
+    "selectUser": "Sélectionner un utilisateur…",
+    "removeMember": "Retirer de l'espace de travail",
+    "toggleRole": "Cliquer pour basculer entre admin et membre",
+    "roleAdmin": "admin",
+    "switchWorkspace": "Changer d'espace de travail"
   }
 }

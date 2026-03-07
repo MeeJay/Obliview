@@ -3,9 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../db';
 import type { AgentApiKey, AgentDevice, AgentDisplayConfig, AgentGroupConfig, AgentThresholds } from '@obliview/shared';
-import { DEFAULT_AGENT_THRESHOLDS, SOCKET_EVENTS } from '@obliview/shared';
+import { DEFAULT_AGENT_THRESHOLDS, SOCKET_EVENTS, prettifySensorLabel } from '@obliview/shared';
 import { heartbeatService } from './heartbeat.service';
 import { notificationService } from './notification.service';
+import { liveAlertService } from './liveAlert.service';
 import { logger } from '../utils/logger';
 
 // ── Socket.io instance (set from index.ts) ──────────────────
@@ -55,6 +56,8 @@ interface AgentDeviceRow {
   // migration 033
   pending_command: string | null;
   uninstall_commanded_at: Date | null;
+  // migration 039
+  tenant_id: number;
 }
 
 function rowToApiKey(row: AgentApiKeyRow): AgentApiKey {
@@ -92,6 +95,7 @@ function rowToDevice(row: AgentDeviceRow, groupConfig?: AgentGroupConfig | null,
     id: row.id,
     uuid: row.uuid,
     hostname: row.hostname,
+    tenantId: row.tenant_id as number,
     name: row.name ?? null,
     ip: row.ip,
     osInfo: typeof row.os_info === 'string' ? JSON.parse(row.os_info) : (row.os_info as AgentDevice['osInfo']),
@@ -769,7 +773,7 @@ export const agentService = {
           ? { op: override.op, threshold: override.threshold }
           : { op: tempT.op, threshold: tempT.threshold };
         if (this._isThresholdExceeded(sensor.celsius, active)) {
-          const displayLabel = device.sensorDisplayNames?.[sensor.key] ?? sensor.label;
+          const displayLabel = device.sensorDisplayNames?.[sensor.key] ?? prettifySensorLabel(sensor.label);
           violations.push(
             `Temp ${displayLabel}: ${sensor.celsius.toFixed(1)}°C ${active.op} ${active.threshold}°C`,
           );
@@ -849,12 +853,36 @@ export const agentService = {
       });
     }
 
-    // Send notifications on status transitions (up ↔ alert)
+    // Send notifications + persist live alerts on status transitions (up ↔ alert)
     if (overallStatus !== previousStatus) {
       const deviceName = device.name ?? device.hostname;
       notificationService.sendForAgent(device.id, deviceName, overallStatus, previousStatus, violations).catch(
         (err) => logger.error(err, `Failed to send agent notification for device ${device.id}`),
       );
+
+      // Persist live alerts in DB so offline users see them when they reconnect
+      const deviceTenantId = device.tenantId;
+      if (overallStatus === 'alert') {
+        // One alert per violation, deduplicated by stable key (skipped if unread alert already exists)
+        for (const [i, violation] of violations.entries()) {
+          const metricKey = violationKeys[i] ?? `unknown_${i}`;
+          liveAlertService.add(deviceTenantId, {
+            severity: 'warning',
+            title: deviceName,
+            message: violation,
+            navigateTo: `/agents/${device.id}`,
+            stableKey: `agent-${device.id}-${metricKey}`,
+          }).catch(err => logger.error(err, `Failed to persist live alert for device ${device.id}`));
+        }
+      } else if (previousStatus === 'alert') {
+        // Recovery from alert state
+        liveAlertService.add(deviceTenantId, {
+          severity: 'up',
+          title: deviceName,
+          message: 'All metrics back to normal',
+          navigateTo: `/agents/${device.id}`,
+        }).catch(err => logger.error(err, `Failed to persist recovery alert for device ${device.id}`));
+      }
     }
   },
 

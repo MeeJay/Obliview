@@ -1,9 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useLiveAlertsStore } from '@/store/liveAlertsStore';
 import type { LiveAlert, AlertSeverity } from '@/store/liveAlertsStore';
+import { useTenantStore } from '@/store/tenantStore';
 import { cn } from '@/utils/cn';
+
+const TOAST_LIFETIME_MS     = 60_000;  // bottom-right: 1 min from alert.createdAt
+const TOP_CENTER_LIFETIME_MS = 10_000; // top-center: 10 s (user sees only the latest)
 
 const SEVERITY_STYLES: Record<AlertSeverity, { bar: string; title: string }> = {
   down:    { bar: 'border-l-red-500',   title: 'text-red-400'   },
@@ -12,28 +16,34 @@ const SEVERITY_STYLES: Record<AlertSeverity, { bar: string; title: string }> = {
   info:    { bar: 'border-l-blue-500',  title: 'text-blue-400'  },
 };
 
-// Auto-dismiss durations per position mode
-const DISMISS_BOTTOM_RIGHT_MS = 60_000;
-const DISMISS_TOP_CENTER_MS   = 10_000;
-
-// ─── Single toast card ───────────────────────────────────────────────────────
+// ─── Single toast card ────────────────────────────────────────────────────────
 
 interface AlertCardProps {
   alert: LiveAlert;
   opacity?: number;
-  autoDismissMs: number;
+  lifetimeMs: number;
 }
 
-function AlertCard({ alert, opacity = 1, autoDismissMs }: AlertCardProps) {
-  const { removeAlert } = useLiveAlertsStore();
+function AlertCard({ alert, opacity = 1, lifetimeMs }: AlertCardProps) {
+  const { dismissToast } = useLiveAlertsStore();
   const navigate = useNavigate();
   const styles = SEVERITY_STYLES[alert.severity];
 
-  // Auto-dismiss timer
+  // Per-notification independent timer — respects elapsed time since createdAt.
+  // If the page reloads after the window has already elapsed, the toast is
+  // immediately dismissed without rendering.
   useEffect(() => {
-    const timer = setTimeout(() => removeAlert(alert.id), autoDismissMs);
+    const elapsed = Date.now() - new Date(alert.createdAt).getTime();
+    const msRemaining = Math.max(0, lifetimeMs - elapsed);
+
+    if (msRemaining === 0) {
+      dismissToast(alert.id);
+      return;
+    }
+
+    const timer = setTimeout(() => dismissToast(alert.id), msRemaining);
     return () => clearTimeout(timer);
-  }, [alert.id, autoDismissMs, removeAlert]);
+  }, [alert.id, alert.createdAt, lifetimeMs, dismissToast]);
 
   const handleCardClick = () => {
     if (alert.navigateTo) {
@@ -60,12 +70,12 @@ function AlertCard({ alert, opacity = 1, autoDismissMs }: AlertCardProps) {
         </p>
       </div>
 
-      {/* Dismiss button */}
+      {/* Dismiss button — hides from tray but keeps alert in the bell */}
       <button
         className="absolute top-2 right-2 text-text-muted hover:text-text-primary transition-colors"
         onClick={(e) => {
           e.stopPropagation();
-          removeAlert(alert.id);
+          dismissToast(alert.id);
         }}
         aria-label="Dismiss"
       >
@@ -75,61 +85,51 @@ function AlertCard({ alert, opacity = 1, autoDismissMs }: AlertCardProps) {
   );
 }
 
-// ─── Auto-dismiss wrapper for top-center (tracks alert.id change) ─────────────
-
-interface TopCenterAlertProps {
-  alert: LiveAlert;
-}
-
-function TopCenterAlert({ alert }: TopCenterAlertProps) {
-  const { removeAlert } = useLiveAlertsStore();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => removeAlert(alert.id), DISMISS_TOP_CENTER_MS);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [alert.id, removeAlert]);
-
-  return <AlertCard alert={alert} autoDismissMs={DISMISS_TOP_CENTER_MS} />;
-}
-
-// ─── Main LiveAlerts renderer ─────────────────────────────────────────────────
+// ─── Main LiveAlerts renderer ──────────────────────────────────────────────────
 
 export function LiveAlerts() {
-  const { alerts, enabled, position } = useLiveAlertsStore();
+  const { alerts, localEnabled, multiTenantEnabled, position } = useLiveAlertsStore();
+  const { currentTenantId } = useTenantStore();
 
-  if (!enabled || alerts.length === 0) return null;
+  const lifetimeMs = position === 'top-center' ? TOP_CENTER_LIFETIME_MS : TOAST_LIFETIME_MS;
+  const now = Date.now();
+
+  // Compute which toasts should currently be visible in the tray
+  const visibleToasts = alerts.filter((a) => {
+    if (a.toastDismissed) return false;
+    // Already past the lifetime window — don't render (AlertCard.useEffect will dismiss on mount)
+    if (now - new Date(a.createdAt).getTime() >= lifetimeMs) return false;
+    // Per-tenant preference filter
+    // If currentTenantId is not yet loaded, treat all alerts as local
+    const isLocal = currentTenantId !== null ? a.tenantId === currentTenantId : true;
+    return isLocal ? localEnabled : multiTenantEnabled;
+  });
+
+  if (visibleToasts.length === 0) return null;
 
   if (position === 'top-center') {
     // Only show the newest alert
-    const latest = alerts[0];
+    const latest = visibleToasts[0];
     return (
-      <div
-        className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[400px] max-w-[calc(100vw-2rem)] animate-fade-in"
-      >
-        <TopCenterAlert key={latest.id} alert={latest} />
+      <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[400px] max-w-[calc(100vw-2rem)] animate-fade-in">
+        <AlertCard key={latest.id} alert={latest} lifetimeMs={TOP_CENTER_LIFETIME_MS} />
       </div>
     );
   }
 
-  // bottom-right: show up to 10, newest at bottom, older stacked above
-  const visible = alerts.slice(0, 10);
+  // bottom-right: show up to 10, newest at bottom, older stacked above with fading opacity
+  const capped = visibleToasts.slice(0, 10);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 w-80 max-w-[calc(100vw-2rem)]">
-      {visible.map((alert, index) => {
-        // index 0 = newest (at bottom), gets full opacity
-        // older ones get progressively less opacity
+      {capped.map((alert, index) => {
         const opacity = Math.max(0.4, 1 - index * 0.15);
         return (
           <AlertCard
             key={alert.id}
             alert={alert}
             opacity={opacity}
-            autoDismissMs={DISMISS_BOTTOM_RIGHT_MS}
+            lifetimeMs={TOAST_LIFETIME_MS}
           />
         );
       })}

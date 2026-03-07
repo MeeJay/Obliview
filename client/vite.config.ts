@@ -4,7 +4,7 @@ import path from 'path';
 import { readFileSync } from 'fs';
 
 const { version: clientVersion } = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url).pathname, 'utf-8'),
+  readFileSync(path.resolve(__dirname, './package.json'), 'utf-8'),
 ) as { version: string };
 
 export default defineConfig({

@@ -931,7 +931,7 @@ function TempsSection({
                   <input type="text" value={sensorNameValue} autoFocus
                     onChange={e => setSensorNameValue(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') void handleSaveSensor(); if (e.key === 'Escape') setEditingSensor(null); }}
-                    placeholder={t.label}
+                    placeholder={prettifySensorLabel(t.label)}
                     className="flex-1 min-w-0 rounded border border-border bg-bg-tertiary px-2 py-0.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted" />
                   <button onClick={() => void handleSaveSensor()} disabled={savingSensor}
                     className="p-0.5 rounded text-status-up hover:bg-bg-hover transition-colors disabled:opacity-50" title="Save">
@@ -2599,7 +2599,6 @@ export function AgentDetailPage() {
 
         {/* Violations banners — one banner per alert type */}
         {violations.length > 0 && (() => {
-          const sdn = device.sensorDisplayNames ?? {};
           const driveRenames = displayConfig.drives.renames ?? {};
 
           type ViolGroup = { key: string; label: string; items: string[] };
@@ -2625,11 +2624,10 @@ export function AgentDetailPage() {
               const text = match ? `${displayMount}: ${match[2]}` : v;
               addTo('disk', 'Disk', text);
             } else if (v.startsWith('Temp ')) {
-              // "Temp <raw_label>: 92.1°C > 85°C"
-              const match = v.match(/^Temp (.+): (.+)$/);
-              const displayLabel = match ? (sdn[`temp:${match[1]}`] ?? prettifySensorLabel(match[1])) : v.slice(5);
-              const text = match ? `${displayLabel}: ${match[2]}` : v;
-              addTo('temp', 'Temperature', text);
+              // "Temp <display_label>: 92.1°C > 85°C"
+              // The server already resolves the label (custom name or prettified key),
+              // so we just strip the "Temp " prefix — no re-lookup needed.
+              addTo('temp', 'Temperature', v.slice(5));
             } else {
               addTo('other', 'Alert', v);
             }

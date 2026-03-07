@@ -10,6 +10,7 @@ import { MonitorWorkerManager } from './workers/MonitorWorkerManager';
 import { heartbeatService } from './services/heartbeat.service';
 import { setAgentServiceIO, agentService } from './services/agent.service';
 import { maintenanceService } from './services/maintenance.service';
+import { setLiveAlertIO } from './services/liveAlert.service';
 
 async function main() {
   // 1. Run pending migrations
@@ -37,6 +38,8 @@ async function main() {
 
   // Provide io to agent service for real-time push events
   setAgentServiceIO(io);
+  // Provide io to live alert service for real-time notification delivery
+  setLiveAlertIO(io);
 
   // Start maintenance background jobs (cleanup + transition notifications)
   maintenanceService.startJobs();

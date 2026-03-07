@@ -3,6 +3,7 @@ import type { Server as HttpServer } from 'http';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { authService } from './services/auth.service';
+import { db } from './db';
 
 export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
@@ -53,6 +54,19 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
       // during gradual migration of all service emits to tenant rooms.
       socket.join('role:admin');
     }
+
+    // Join notification rooms for ALL tenants this user can access.
+    // This ensures cross-tenant live alerts are delivered in real-time,
+    // even when the user is currently viewing a different tenant.
+    db('user_tenants')
+      .where('user_id', user.id)
+      .pluck('tenant_id')
+      .then((tenantIds: number[]) => {
+        for (const tid of tenantIds) {
+          socket.join(`tenant:${tid}:notifications`);
+        }
+      })
+      .catch((err: unknown) => logger.error(err, 'Failed to join notification rooms'));
 
     // All authenticated users join the general room
     socket.join('general');

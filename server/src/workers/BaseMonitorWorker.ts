@@ -9,6 +9,7 @@ import { groupService } from '../services/group.service';
 import { groupNotificationService } from '../services/groupNotification.service';
 import { permissionService } from '../services/permission.service';
 import { maintenanceService } from '../services/maintenance.service';
+import { liveAlertService } from '../services/liveAlert.service';
 import { db } from '../db';
 import { logger } from '../utils/logger';
 
@@ -387,6 +388,32 @@ export abstract class BaseMonitorWorker {
       oldStatus,
       newStatus,
     ).catch(err => logger.error(err, `Remediation trigger failed for monitor ${this.config.id}`));
+
+    // Persist live alert in DB so offline users see it when they reconnect
+    const tenantId = await this.resolveTenantId();
+    if (tenantId !== null) {
+      const isProblem = isProblemStatus(newStatus);
+      const wasProblematic = isProblemStatus(oldStatus);
+      let severity: 'down' | 'up' | 'warning' | 'info';
+      let alertMessage: string;
+      if (isProblem) {
+        severity = newStatus === 'down' ? 'down' : 'warning';
+        alertMessage = message ?? `Monitor is ${newStatus.toUpperCase()}`;
+      } else if (wasProblematic) {
+        severity = 'up';
+        alertMessage = 'Monitor recovered';
+      } else {
+        // Status transition between non-problem states (e.g. pending→up): no live alert needed
+        return;
+      }
+      liveAlertService.add(tenantId, {
+        severity,
+        title: this.config.name,
+        message: alertMessage,
+        navigateTo: `/monitor/${this.config.id}`,
+        // No stableKey: handleStatusChange only fires on true transitions, so every call is genuine
+      }).catch(err => logger.error(err, `Failed to persist live alert for monitor ${this.config.id}`));
+    }
   }
 
   /**

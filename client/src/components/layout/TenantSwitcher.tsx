@@ -16,12 +16,7 @@ export function TenantSwitcher() {
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Only show when there are multiple tenants
-  if (tenants.length <= 1) return null;
-
-  const currentTenant = tenants.find((t) => t.id === currentTenantId) ?? tenants[0];
-
-  // Close on outside click
+  // Close on outside click — must be BEFORE the early return to satisfy Rules of Hooks
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -35,6 +30,11 @@ export function TenantSwitcher() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
+
+  // Only show when there are multiple tenants
+  if (tenants.length <= 1) return null;
+
+  const currentTenant = tenants.find((t) => t.id === currentTenantId) ?? tenants[0];
 
   const handleSwitch = async (tenantId: number) => {
     if (tenantId === currentTenantId || switching) return;

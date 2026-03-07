@@ -18,6 +18,7 @@ import smtpServerRoutes from './smtpServer.routes';
 import appConfigRoutes from './appConfig.routes';
 import twoFactorRoutes from './twoFactor.routes';
 import maintenanceRoutes from './maintenance.routes';
+import { liveAlertRouter } from './liveAlert.routes';
 
 const router = Router();
 
@@ -27,6 +28,9 @@ router.use('/heartbeat', heartbeatRoutes); // push monitors (no session)
 router.use('/agent', agentRoutes);          // agent push (authenticated via API key)
 router.use('/admin/config', appConfigRoutes);
 router.use('/profile/2fa', twoFactorRoutes); // must be before /profile
+
+// ── Live alerts (mixed: /all is cross-tenant, rest is tenant-scoped — handled inside router) ──
+router.use('/live-alerts', liveAlertRouter);
 
 // ── Tenant management (requireAuth but NOT requireTenant) ──────────────────
 // /api/tenants  (CRUD + member management)

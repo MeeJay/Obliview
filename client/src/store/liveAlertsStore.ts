@@ -1,69 +1,155 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { LiveAlertData } from '@obliview/shared';
 
 export type AlertSeverity = 'down' | 'up' | 'warning' | 'info';
 
-export interface LiveAlert {
-  id: string;
-  severity: AlertSeverity;
-  title: string;
-  message: string;
-  navigateTo?: string;
-  createdAt: number;
-  read: boolean;
+/** Client-side alert object. Mirrors LiveAlertData but adds ephemeral UI state. */
+export interface LiveAlert extends LiveAlertData {
+  /** True when the toast popup was dismissed (auto-timer or X button). Ephemeral — resets on reload. */
+  toastDismissed: boolean;
 }
 
-interface LiveAlertsState {
-  alerts: LiveAlert[];
-  unreadCount: number;
-  enabled: boolean;
+// ─── Persistent preferences (localStorage) ───────────────────────────────────
+
+interface AlertPrefs {
+  /** Show toast popups for the current tenant's alerts */
+  localEnabled: boolean;
+  /** Show toast popups for other tenants' alerts (visible only when user has multiple tenants) */
+  multiTenantEnabled: boolean;
   position: 'top-center' | 'bottom-right';
-  setEnabled: (v: boolean) => void;
-  setPosition: (p: 'top-center' | 'bottom-right') => void;
-  /**
-   * Add an alert. Pass a stable `id` to deduplicate: if an alert with the same id
-   * is already in the list, it is skipped (the violation is already known to the user).
-   * Omit `id` for one-off events (monitor up/down) — a random UUID is assigned.
-   */
-  addAlert: (alert: Omit<LiveAlert, 'id' | 'createdAt' | 'read'> & { id?: string }) => void;
-  markAlertRead: (id: string) => void;
-  markAllRead: () => void;
-  removeAlert: (id: string) => void;
-  clearAll: () => void;
 }
 
-export const useLiveAlertsStore = create<LiveAlertsState>((set) => ({
-  alerts: [],
-  unreadCount: 0,
-  enabled: true,
-  position: 'bottom-right',
-  setEnabled: (v) => set({ enabled: v }),
-  setPosition: (p) => set({ position: p }),
-  addAlert: (alert) =>
-    set((s) => {
-      const id = alert.id ?? crypto.randomUUID();
-      // Stable id already in list → same violation still active, skip silently
-      if (alert.id && s.alerts.some((a) => a.id === id)) return s;
-      return {
-        alerts: [
-          { ...alert, id, read: false, createdAt: Date.now() },
-          ...s.alerts,
-        ].slice(0, 50),
-        unreadCount: s.unreadCount + 1,
-      };
+// ─── Full store state ─────────────────────────────────────────────────────────
+
+interface LiveAlertsState extends AlertPrefs {
+  alerts: LiveAlert[];
+
+  // ── Preferences ──────────────────────────────────────────────────────────────
+  setLocalEnabled: (v: boolean) => void;
+  setMultiTenantEnabled: (v: boolean) => void;
+  setPosition: (p: 'top-center' | 'bottom-right') => void;
+  /** Backward-compat alias used by authStore (reads user.preferences.toastEnabled) */
+  setEnabled: (v: boolean) => void;
+
+  // ── Server sync ───────────────────────────────────────────────────────────────
+  /** Fetch all alerts (all accessible tenants) from the server and replace local state. */
+  fetchAlerts: () => Promise<void>;
+  /** Add a single alert received via socket (NOTIFICATION_NEW). */
+  addAlertFromServer: (alert: LiveAlertData) => void;
+
+  // ── Actions ───────────────────────────────────────────────────────────────────
+  /** Dismiss the toast popup for one alert (keeps it in the bell, does NOT mark as read). */
+  dismissToast: (id: number) => void;
+  /** Mark one alert as read (server + local). Also dismisses the toast. */
+  markAlertRead: (id: number) => Promise<void>;
+  /** Mark all current-tenant alerts as read (server + local). */
+  markAllRead: () => Promise<void>;
+  /** Delete one alert (server + local). */
+  removeAlert: (id: number) => Promise<void>;
+  /** Clear all alerts for current tenant (server + local). */
+  clearAll: () => Promise<void>;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function toLocalAlert(data: LiveAlertData): LiveAlert {
+  return { ...data, toastDismissed: false };
+}
+
+async function apiPatch(path: string): Promise<void> {
+  await fetch(path, { method: 'PATCH', credentials: 'include' });
+}
+async function apiPost(path: string): Promise<void> {
+  await fetch(path, { method: 'POST', credentials: 'include' });
+}
+async function apiDelete(path: string): Promise<void> {
+  await fetch(path, { method: 'DELETE', credentials: 'include' });
+}
+
+// ─── Store ────────────────────────────────────────────────────────────────────
+
+export const useLiveAlertsStore = create<LiveAlertsState>()(
+  persist(
+    (set, get) => ({
+      // Default preferences
+      localEnabled: true,
+      multiTenantEnabled: true,
+      position: 'bottom-right',
+
+      alerts: [],
+
+      // ── Preferences ────────────────────────────────────────────────────────
+      setLocalEnabled: (v) => set({ localEnabled: v }),
+      setMultiTenantEnabled: (v) => set({ multiTenantEnabled: v }),
+      setPosition: (p) => set({ position: p }),
+      setEnabled: (v) => set({ localEnabled: v }),
+
+      // ── Server sync ────────────────────────────────────────────────────────
+      fetchAlerts: async () => {
+        try {
+          const res = await fetch('/api/live-alerts/all', { credentials: 'include' });
+          if (!res.ok) return;
+          const data = (await res.json()) as { alerts: LiveAlertData[] };
+          set({ alerts: data.alerts.map(toLocalAlert) });
+        } catch {
+          // Ignore network errors (user may not be logged in yet)
+        }
+      },
+
+      addAlertFromServer: (alert) =>
+        set((s) => {
+          // Skip if already in list (e.g. double-emit)
+          if (s.alerts.some((a) => a.id === alert.id)) return s;
+          return { alerts: [toLocalAlert(alert), ...s.alerts].slice(0, 200) };
+        }),
+
+      // ── Actions ────────────────────────────────────────────────────────────
+      dismissToast: (id) =>
+        set((s) => ({
+          alerts: s.alerts.map((a) => a.id === id ? { ...a, toastDismissed: true } : a),
+        })),
+
+      markAlertRead: async (id) => {
+        // Optimistic update
+        set((s) => ({
+          alerts: s.alerts.map((a) => a.id === id ? { ...a, read: true, toastDismissed: true } : a),
+        }));
+        await apiPatch(`/api/live-alerts/${id}/read`);
+      },
+
+      markAllRead: async () => {
+        set((s) => ({ alerts: s.alerts.map((a) => ({ ...a, read: true })) }));
+        await apiPost('/api/live-alerts/read-all');
+      },
+
+      removeAlert: async (id) => {
+        set((s) => ({ alerts: s.alerts.filter((a) => a.id !== id) }));
+        await apiDelete(`/api/live-alerts/${id}`);
+      },
+
+      clearAll: async () => {
+        set({ alerts: [] });
+        await apiDelete('/api/live-alerts');
+        // Reload to restore cross-tenant alerts that weren't in the cleared tenant
+        await get().fetchAlerts();
+      },
     }),
-  markAlertRead: (id) =>
-    set((s) => {
-      const alerts = s.alerts.map((a) => a.id === id ? { ...a, read: true } : a);
-      return { alerts, unreadCount: alerts.filter((a) => !a.read).length };
-    }),
-  markAllRead: () =>
-    set((s) => ({
-      alerts: s.alerts.map((a) => ({ ...a, read: true })),
-      unreadCount: 0,
-    })),
-  removeAlert: (id) => set((s) => {
-    const alerts = s.alerts.filter((a) => a.id !== id);
-    return { alerts, unreadCount: alerts.filter((a) => !a.read).length };
-  }),
-  clearAll: () => set({ alerts: [], unreadCount: 0 }),
-}));
+    {
+      name: 'obliview-alert-prefs',
+      // Only persist preferences, NOT the alert list (alerts always fetched fresh from server)
+      partialize: (s) => ({
+        localEnabled: s.localEnabled,
+        multiTenantEnabled: s.multiTenantEnabled,
+        position: s.position,
+      }),
+    },
+  ),
+);
+
+// ─── Computed helpers (exported for components) ───────────────────────────────
+
+/** Count of unread alerts, optionally filtered to a specific tenant. */
+export function countUnread(alerts: LiveAlert[], tenantId?: number | null): number {
+  return alerts.filter((a) => !a.read && (tenantId == null || a.tenantId === tenantId)).length;
+}

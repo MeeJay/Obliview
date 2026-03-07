@@ -375,20 +375,17 @@ export function ImportExportPage() {
           descriptions={SECTION_DESCRIPTIONS}
           extra={
             exportSections.has('remediationActions') && (
-              <div className="ml-4 mt-1 flex items-start gap-3 rounded-lg border border-border bg-bg-tertiary px-3 py-2.5">
-                <input
-                  id="includeSSHCredentials"
-                  type="checkbox"
-                  checked={includeSSHCredentials}
-                  onChange={e => setIncludeSSHCredentials(e.target.checked)}
-                  className="mt-0.5 accent-accent"
-                />
-                <label htmlFor="includeSSHCredentials" className="cursor-pointer">
+              <div className="ml-4 mt-1 flex items-center justify-between gap-4 rounded-lg border border-border bg-bg-tertiary px-3 py-2.5">
+                <div>
                   <span className="text-sm text-text-secondary">{t('importExport.includeSsh')}</span>
                   <p className="text-[11px] text-text-muted mt-0.5">
                     {t('importExport.includeSshDesc')}
                   </p>
-                </label>
+                </div>
+                <Toggle
+                  checked={includeSSHCredentials}
+                  onChange={setIncludeSSHCredentials}
+                />
               </div>
             )
           }

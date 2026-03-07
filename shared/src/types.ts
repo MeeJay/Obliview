@@ -7,6 +7,21 @@ import type { SettingsKey } from './settingsDefaults';
 export interface UserPreferences {
   toastEnabled: boolean;
   toastPosition: 'top-center' | 'bottom-right';
+  multiTenantNotificationsEnabled?: boolean;
+}
+
+/** Shape of a live alert as returned by the server (used in socket NOTIFICATION_NEW + REST API). */
+export interface LiveAlertData {
+  id: number;
+  tenantId: number;
+  tenantName?: string;
+  severity: 'down' | 'up' | 'warning' | 'info';
+  title: string;
+  message: string;
+  navigateTo: string | null;
+  stableKey: string | null;
+  read: boolean;
+  createdAt: string; // ISO 8601
 }
 
 export interface User {
@@ -599,6 +614,7 @@ export interface AgentDevice {
   id: number;
   uuid: string;
   hostname: string;
+  tenantId: number;
   /** Custom display name — shown instead of hostname when set */
   name: string | null;
   ip: string | null;
