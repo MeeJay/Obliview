@@ -3,6 +3,7 @@ import type { Knex } from 'knex';
 import { randomUUID } from 'crypto';
 import { db } from '../db';
 import { AppError } from '../middleware/errorHandler';
+import { MonitorWorkerManager } from '../workers/MonitorWorkerManager';
 
 type ExportSection =
   | 'monitorGroups'
@@ -402,6 +403,9 @@ export const importExportController = {
       type SectionResult = { created: number; updated: number; skipped: number };
       const results: Record<string, SectionResult> = {};
 
+      // Track monitor IDs touched by this import so we can start/restart their workers after commit
+      const importedMonitorIds = new Set<number>();
+
       await db.transaction(async (trx) => {
 
         // ── Pre-populate UUID → DB id maps (scoped to current tenant) ─────────
@@ -654,12 +658,16 @@ export const importExportController = {
 
             if (decision.action === 'update') {
               await trx('monitors').where({ uuid: decision.uuid, tenant_id: tenantId }).update(row);
+              // Resolve existing DB id to restart the worker after commit
+              const existingId = decision.existingId ?? monitorIdByUuid.get(decision.uuid);
+              if (existingId) importedMonitorIds.add(existingId);
               updated++;
             } else {
               const [inserted] = await trx('monitors').insert({ ...row, uuid: decision.uuid }).returning('id');
               // Map original UUID to new DB id so settings/bindings can resolve it
               if (m.uuid) monitorIdByUuid.set(m.uuid as string, inserted.id);
               monitorIdByUuid.set(decision.uuid, inserted.id);
+              importedMonitorIds.add(inserted.id);
               created++;
             }
           }
@@ -996,6 +1004,13 @@ export const importExportController = {
         }
 
       }); // end transaction
+
+      // Start/restart workers for all imported monitors (fire-and-don't-block response)
+      if (importedMonitorIds.size > 0) {
+        MonitorWorkerManager.getInstance()
+          .restartMonitors([...importedMonitorIds])
+          .catch((err) => console.error('[Import] Failed to restart monitor workers:', err));
+      }
 
       res.json({ success: true, data: results });
     } catch (err) {
