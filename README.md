@@ -1,21 +1,21 @@
 # Obliview
 
-Self-hosted uptime & infrastructure monitoring built for teams. Multi-tenant workspaces, hierarchical groups, RBAC, 13 monitor types, 10 notification channels, native system agent, and automated remediation — deployable in one command.
+Self-hosted uptime & infrastructure monitoring built for teams. Multi-tenant workspaces, hierarchical groups, RBAC, 13 monitor types, 10 notification channels, native system agent, and automated remediation - deployable in one command.
 ---
 ## Features at a Glance
 
-- **13 monitor types** — HTTP, Ping, TCP, DNS, SSL, SMTP, Docker, Game Server, Push, Script, JSON API, Browser, Value Watcher
-- **Native system agent** — Windows/Linux/macOS, with CPU, memory, disk, network, temperature, GPU metrics
-- **10 notification channels** — Telegram, Discord, Slack, Teams, SMTP, Webhook, Gotify, Ntfy, Pushover, Free Mobile
-- **5 remediation actions** — Webhook, N8N, Script, Docker restart, SSH command
-- **Multi-tenant workspaces** — isolated tenants with per-workspace roles
-- **Teams & RBAC** — read-only / read-write per group or monitor
-- **Maintenance windows** — one-time or recurring, scope-based, suppresses notifications
-- **2FA** — TOTP authenticator apps + Email OTP
-- **Import / Export** — full config backup as JSON with conflict resolution
+- **13 monitor types** - HTTP, Ping, TCP, DNS, SSL, SMTP, Docker, Game Server, Push, Script, JSON API, Browser, Value Watcher
+- **Native system agent** - Windows/Linux/macOS, with CPU, memory, disk, network, temperature, GPU metrics
+- **10 notification channels** - Telegram, Discord, Slack, Teams, SMTP, Webhook, Gotify, Ntfy, Pushover, Free Mobile
+- **5 remediation actions** - Webhook, N8N, Script, Docker restart, SSH command
+- **Multi-tenant workspaces** - isolated tenants with per-workspace roles
+- **Teams & RBAC** - read-only / read-write per group or monitor
+- **Maintenance windows** - one-time or recurring, scope-based, suppresses notifications
+- **2FA** - TOTP authenticator apps + Email OTP
+- **Import / Export** - full config backup as JSON with conflict resolution
 - **18 UI languages**
-- **Real-time** — Socket.io live updates and live alert toasts
-- **Desktop tray app** — Windows & macOS, multi-tenant tab bar, auto-update
+- **Real-time** - Socket.io live updates and live alert toasts
+- **Desktop tray app** - Windows & macOS, multi-tenant tab bar, auto-update
 
 ---
 
@@ -31,10 +31,10 @@ Self-hosted uptime & infrastructure monitoring built for teams. Multi-tenant wor
 | **SMTP** | SMTP server availability check |
 | **Docker Container** | Container running/stopped status via Docker socket |
 | **Game Server** | Availability & player count via GameDig (Minecraft, CS2, Valheim, and 300+ games) |
-| **Push / Heartbeat** | Passive monitoring — external systems POST to a token URL, Obliview alerts if they stop |
+| **Push / Heartbeat** | Passive monitoring - external systems POST to a token URL, Obliview alerts if they stop |
 | **Script** | Run a shell command, validate exit code |
 | **JSON API** | Fetch a JSON endpoint, extract a value via JSONPath, validate it |
-| **Browser** | Headless Playwright browser check — renders JS, waits for selectors, optional screenshot on failure |
+| **Browser** | Headless Playwright browser check - renders JS, waits for selectors, optional screenshot on failure |
 | **Value Watcher** | Numeric value monitoring with operators: `>`, `<`, `>=`, `<=`, `==`, `!=`, `between`, `changed` |
 
 Agent monitors (CPU, memory, disk, etc.) are a 14th category managed through the native agent system.
@@ -50,7 +50,7 @@ A lightweight Go binary runs on monitored hosts and pushes metrics to the server
 - Memory & swap usage
 - Disk usage per mount point
 - Network throughput (in/out per interface)
-- Temperatures — CPU, GPU, motherboard, NVMe (Windows: LibreHardwareMonitor + PawnIO + ASUS ATK; Linux/macOS: native sensors)
+- Temperatures - CPU, GPU, motherboard, NVMe (Windows: LibreHardwareMonitor + PawnIO + ASUS ATK; Linux/macOS: native sensors)
 - GPU utilization, VRAM, temperature (NVIDIA & AMD)
 
 **Installation**
@@ -62,7 +62,7 @@ A lightweight Go binary runs on monitored hosts and pushes metrics to the server
 **Configuration per device**
 - Threshold overrides per metric (CPU, memory, disk, network, temperature)
 - Group-level default thresholds with per-device override toggle
-- Push interval (seconds) — group default or device-specific
+- Push interval (seconds) - group default or device-specific
 - Heartbeat monitoring (alert if agent stops pushing)
 - Display config: hide/show sections, custom labels, chart preferences
 - Sensor display name renaming
@@ -86,13 +86,13 @@ Bind channels at **global**, **group**, or **monitor** level with **merge**, **r
 | **Slack** | Incoming webhook |
 | **Microsoft Teams** | Webhook URL |
 | **Email (SMTP)** | Custom SMTP server or platform SMTP |
-| **Webhook** | Generic HTTP — GET / POST / PUT / PATCH, custom headers |
+| **Webhook** | Generic HTTP - GET / POST / PUT / PATCH, custom headers |
 | **Gotify** | Self-hosted push (server URL + token) |
 | **Ntfy** | Self-hosted or ntfy.sh push |
 | **Pushover** | Mobile push via Pushover app |
 | **Free Mobile** | SMS via French mobile operator API |
 
-**Group notification mode** — receive one alert when the first monitor in a group goes down, and one recovery when all are back up.
+**Group notification mode** - receive one alert when the first monitor in a group goes down, and one recovery when all are back up.
 
 Test messages can be sent directly from the UI to validate channel configuration.
 
@@ -135,7 +135,7 @@ Create isolated workspaces (tenants) within a single Obliview instance.
 - Create **teams** per workspace
 - Assign users to teams
 - Grant teams **read-only** (RO) or **read-write** (RW) access per group or monitor
-- Access cascades through the group hierarchy — assign a group and all children are covered
+- Access cascades through the group hierarchy - assign a group and all children are covered
 - `canCreate` flag per team: allows non-admins to create monitors/groups
 - Platform admins always have full access to their workspace
 
@@ -171,7 +171,7 @@ Suppress alerts and exclude downtime from uptime statistics during planned maint
 
 - **One-time** windows (auto-deleted after expiry) or **recurring** (daily / weekly)
 - Scope: global, group, monitor, or agent device
-- Scope inheritance — set a window on a group and it applies to all child monitors
+- Scope inheritance - set a window on a group and it applies to all child monitors
 - Heartbeat records are shown in blue during maintenance
 - Notifications and remediations are suppressed
 - Uptime % and response time averages exclude maintenance periods
@@ -180,8 +180,8 @@ Suppress alerts and exclude downtime from uptime statistics during planned maint
 
 ## Two-Factor Authentication
 
-- **TOTP** — any authenticator app (Google Authenticator, Authy, 1Password, etc.)
-- **Email OTP** — one-time code sent via SMTP
+- **TOTP** - any authenticator app (Google Authenticator, Authy, 1Password, etc.)
+- **Email OTP** - one-time code sent via SMTP
 - Optional system-wide enforcement (all users must enroll 2FA)
 - Setup available during enrollment wizard or from the profile page
 
@@ -191,10 +191,10 @@ Suppress alerts and exclude downtime from uptime statistics during planned maint
 
 New users are guided through a 4-step wizard on first login:
 
-1. **Language** — pick from 18 supported languages
-2. **Profile** — display name, email address
-3. **Alerts** — configure notification preferences
-4. **2FA** — optional TOTP or Email OTP setup
+1. **Language** - pick from 18 supported languages
+2. **Profile** - display name, email address
+3. **Alerts** - configure notification preferences
+4. **2FA** - optional TOTP or Email OTP setup
 
 ---
 
@@ -205,11 +205,11 @@ Full configuration backup and restore as JSON.
 **Exportable sections:** monitor groups, monitors, settings, notification channels, agent groups, teams, remediation actions, remediation bindings.
 
 **Conflict resolution strategies** (when a UUID matches an existing record):
-- **Update** — overwrite the existing record
-- **Generate new** — create a duplicate with a fresh UUID
-- **Skip** — leave the existing record untouched
+- **Update** - overwrite the existing record
+- **Generate new** - create a duplicate with a fresh UUID
+- **Skip** - leave the existing record untouched
 
-Export and import are scoped to the **active workspace** — cross-tenant data is never included.
+Export and import are scoped to the **active workspace** - cross-tenant data is never included.
 
 ---
 
@@ -220,7 +220,7 @@ Real-time status-change notifications delivered via Socket.io without polling.
 - Floating toast notifications (bottom-right stack, 1-minute auto-dismiss)
 - Top-center banner showing the latest alert (10-second auto-dismiss)
 - Click to navigate directly to the affected monitor or agent
-- Per-workspace filtering — only see alerts relevant to your current tenant
+- Per-workspace filtering - only see alerts relevant to your current tenant
 - Desktop app: unread badge per workspace tab, optional auto-switch to the alerting workspace
 
 ---
@@ -230,10 +230,10 @@ Real-time status-change notifications delivered via Socket.io without polling.
 A lightweight system tray application (Go) for quick access without keeping a browser tab open.
 
 - **Windows** (MSI installer) and **macOS** (DMG)
-- Per-workspace tab bar — switch between tenants
+- Per-workspace tab bar - switch between tenants
 - Unread alert badge per tab
-- **Auto-cycle mode** — rotate through workspaces every N seconds
-- **Follow alerts mode** — automatically switch to the workspace that just received an alert
+- **Auto-cycle mode** - rotate through workspaces every N seconds
+- **Follow alerts mode** - automatically switch to the workspace that just received an alert
 - Auto-update with in-tray update prompt
 - Starts minimized to tray, opens on click
 
@@ -261,7 +261,7 @@ Language is saved per user and applied immediately without page reload.
 
 ## Real-Time Dashboard
 
-- Live status updates via Socket.io — no manual refresh needed
+- Live status updates via Socket.io - no manual refresh needed
 - Per-monitor status: `UP`, `DOWN`, `ALERT`, `PAUSED`, `PENDING`, `MAINTENANCE`, `SSL_WARNING`, `SSL_EXPIRED`, `OFFLINE`
 - 24-hour uptime %, average/min/max response time
 - Group-level aggregated status (number of monitors down, in alert, pending, etc.)
@@ -297,7 +297,7 @@ Set `DATABASE_URL` in your `.env` to point at your existing PostgreSQL instance.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://obliview:changeme@localhost:5432/obliview` |
-| `SESSION_SECRET` | Session signing secret | — |
+| `SESSION_SECRET` | Session signing secret | - |
 | `PORT` | Server port | `3001` |
 | `NODE_ENV` | `production` or `development` | `production` |
 | `CLIENT_ORIGIN` | CORS origin for the client | `http://localhost` |

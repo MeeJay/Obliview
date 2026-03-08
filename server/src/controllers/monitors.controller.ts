@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Heartbeat } from '@obliview/shared';
+import { SOCKET_EVENTS } from '@obliview/shared';
 import { monitorService } from '../services/monitor.service';
 import { heartbeatService } from '../services/heartbeat.service';
 import { permissionService } from '../services/permission.service';
@@ -8,6 +9,14 @@ import { MonitorWorkerManager } from '../workers/MonitorWorkerManager';
 import { AppError } from '../middleware/errorHandler';
 import type { CreateMonitorInput, BulkUpdateInput } from '../validators/monitor.schema';
 import { maintenanceService } from '../services/maintenance.service';
+
+/** Broadcast a monitor event to all admin clients (and tenant-scoped admin room). */
+function emitMonitorEvent(req: Request, event: string, payload: unknown): void {
+  const io = req.app.get('io');
+  if (!io) return;
+  if (req.tenantId) io.to(`tenant:${req.tenantId}:admin`).emit(event, payload);
+  io.to('role:admin').emit(event, payload);
+}
 
 export const monitorsController = {
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -82,6 +91,7 @@ export const monitorsController = {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const updated = await monitorService.getById(monitor.id);
 
+      emitMonitorEvent(req, SOCKET_EVENTS.MONITOR_CREATED, { monitor: updated ?? monitor });
       res.status(201).json({ success: true, data: updated || monitor });
     } catch (err) {
       next(err);
@@ -101,6 +111,7 @@ export const monitorsController = {
       const wm = MonitorWorkerManager.getInstance();
       await wm.restartMonitor(id);
 
+      emitMonitorEvent(req, SOCKET_EVENTS.MONITOR_UPDATED, { monitorId: id, changes: monitor });
       res.json({ success: true, data: monitor });
     } catch (err) {
       next(err);
@@ -120,6 +131,7 @@ export const monitorsController = {
         throw new AppError(404, 'Monitor not found');
       }
 
+      emitMonitorEvent(req, SOCKET_EVENTS.MONITOR_DELETED, { monitorId: id });
       res.json({ success: true, message: 'Monitor deleted' });
     } catch (err) {
       next(err);
@@ -145,6 +157,7 @@ export const monitorsController = {
         await wm.restartMonitor(id);
       }
 
+      emitMonitorEvent(req, SOCKET_EVENTS.MONITOR_PAUSED, { monitorId: id, isPaused: newStatus === 'paused' });
       res.json({
         success: true,
         data: { id, status: newStatus },
@@ -173,6 +186,9 @@ export const monitorsController = {
       const wm = MonitorWorkerManager.getInstance();
       await wm.restartMonitors(monitorIds);
 
+      for (const m of monitors) {
+        emitMonitorEvent(req, SOCKET_EVENTS.MONITOR_UPDATED, { monitorId: m.id, changes: m });
+      }
       res.json({ success: true, data: monitors });
     } catch (err) {
       next(err);

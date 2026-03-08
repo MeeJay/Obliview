@@ -72,6 +72,23 @@ export abstract class BaseMonitorWorker {
   async start(): Promise<void> {
     this.isRunning = true;
     logger.info(`Starting worker for monitor "${this.config.name}" (id: ${this.config.id})`);
+
+    // Restore previousStatus / confirmedStatus from the DB so a fresh start
+    // does not re-send notifications for problems that were already known before
+    // the server restarted (e.g. a monitor that was already DOWN).
+    try {
+      const row = await db('monitors')
+        .where({ id: this.config.id })
+        .select('status')
+        .first() as { status: MonitorStatus } | undefined;
+      if (row?.status && row.status !== 'pending') {
+        this.previousStatus  = row.status;
+        this.confirmedStatus = row.status;
+      }
+    } catch {
+      // Non-critical — fall through with defaults ('pending')
+    }
+
     await this.beat();
     this.scheduleNext();
   }

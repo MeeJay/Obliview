@@ -114,13 +114,19 @@ export const useMonitorStore = create<MonitorStore>((set, get) => ({
       const updated = [...existing, heartbeat].slice(-maxHeartbeats);
       heartbeats.set(monitorId, updated);
 
-      // Also update monitor status and maintenance flag
+      // Also update monitor status and maintenance flag.
+      // Guard: don't overwrite 'updating' with 'pending' — the agent emits
+      // 'pending' heartbeats while self-updating (for uptime exclusion), but the
+      // UI badge should stay on 'updating' until the agent reconnects.
       const monitors = new Map(state.monitors);
       const monitor = monitors.get(monitorId);
       if (monitor) {
+        const newStatus = (heartbeat.status === 'pending' && monitor.status === 'updating')
+          ? 'updating'
+          : heartbeat.status;
         monitors.set(monitorId, {
           ...monitor,
-          status: heartbeat.status,
+          status: newStatus,
           inMaintenance: heartbeat.inMaintenance ?? monitor.inMaintenance,
         });
       }

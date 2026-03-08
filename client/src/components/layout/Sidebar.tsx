@@ -67,15 +67,16 @@ function usePersisted<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T))
 
 function AgentStatusBadge({ status }: { status: MonitorStatus | 'suspended' | undefined }) {
   const cfg: Record<string, { dot: string; text: string; label: string }> = {
-    up:          { dot: 'bg-green-500',  text: 'text-green-400',  label: 'UP'       },
-    down:        { dot: 'bg-red-500',    text: 'text-red-400',    label: 'DOWN'     },
-    alert:       { dot: 'bg-orange-500', text: 'text-orange-400', label: 'ALERT'    },
-    inactive:    { dot: 'bg-gray-400',   text: 'text-gray-400',   label: 'OFFLINE'  },
-    suspended:   { dot: 'bg-gray-500',   text: 'text-gray-500',   label: 'PAUSED'   },
-    paused:      { dot: 'bg-gray-500',   text: 'text-gray-500',   label: 'PAUSED'   },
-    pending:     { dot: 'bg-yellow-500', text: 'text-yellow-400', label: 'PENDING'  },
-    ssl_warning: { dot: 'bg-yellow-400', text: 'text-yellow-400', label: 'WARN'     },
-    ssl_expired: { dot: 'bg-red-500',    text: 'text-red-400',    label: 'EXPIRED'  },
+    up:          { dot: 'bg-green-500',               text: 'text-green-400',  label: 'UP'       },
+    down:        { dot: 'bg-red-500',                 text: 'text-red-400',    label: 'DOWN'     },
+    alert:       { dot: 'bg-orange-500',              text: 'text-orange-400', label: 'ALERT'    },
+    inactive:    { dot: 'bg-gray-400',                text: 'text-gray-400',   label: 'OFFLINE'  },
+    suspended:   { dot: 'bg-gray-500',                text: 'text-gray-500',   label: 'PAUSED'   },
+    paused:      { dot: 'bg-gray-500',                text: 'text-gray-500',   label: 'PAUSED'   },
+    pending:     { dot: 'bg-yellow-500',              text: 'text-yellow-400', label: 'PENDING'  },
+    ssl_warning: { dot: 'bg-yellow-400',              text: 'text-yellow-400', label: 'WARN'     },
+    ssl_expired: { dot: 'bg-red-500',                 text: 'text-red-400',    label: 'EXPIRED'  },
+    updating:    { dot: 'bg-blue-500 animate-pulse',  text: 'text-blue-400',   label: 'UPDATE'   },
   };
   const s = cfg[status ?? ''] ?? { dot: 'bg-gray-400', text: 'text-gray-400', label: '···' };
   return (

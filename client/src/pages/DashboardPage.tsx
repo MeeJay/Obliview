@@ -7,7 +7,7 @@ import { useMonitorStore } from '@/store/monitorStore';
 import { useGroupStore } from '@/store/groupStore';
 import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
-import { useSocket } from '@/hooks/useSocket';
+
 import { monitorsApi } from '@/api/monitors.api';
 import { MonitorCard } from '@/components/monitors/MonitorCard';
 import { BulkEditModal } from '@/components/monitors/BulkEditModal';
@@ -61,8 +61,6 @@ function distributeColumns<T>(items: T[], getWeight: (item: T) => number): [T[],
 }
 
 export function DashboardPage() {
-  useSocket();
-
   const { t } = useTranslation();
   const { canCreate } = useAuthStore();
   const { openAddAgentModal } = useUiStore();

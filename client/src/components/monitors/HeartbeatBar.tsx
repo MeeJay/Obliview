@@ -29,15 +29,16 @@ export function estimateMaxBars(): number {
 }
 
 const statusColors: Record<MonitorStatus, string> = {
-  up: 'bg-status-up',
-  down: 'bg-status-down',
-  pending: 'bg-status-pending',
+  up:          'bg-status-up',
+  down:        'bg-status-down',
+  pending:     'bg-status-pending',
   maintenance: 'bg-status-maintenance',
-  paused: 'bg-status-paused',
+  paused:      'bg-status-paused',
   ssl_warning: 'bg-status-ssl-warning',
   ssl_expired: 'bg-status-ssl-expired',
-  alert: 'bg-orange-500',
-  inactive: 'bg-gray-400',
+  alert:       'bg-orange-500',
+  inactive:    'bg-gray-400',
+  updating:    'bg-blue-500',
 };
 
 export function HeartbeatBar({ heartbeats, maxBars }: HeartbeatBarProps) {

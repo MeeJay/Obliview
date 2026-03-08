@@ -22,6 +22,7 @@ export const MONITOR_STATUS = [
   'ssl_warning', 'ssl_expired',
   'alert',    // threshold violation on an agent monitor (orange)
   'inactive', // agent offline + heartbeat_monitoring=false (grey, no notification)
+  'updating', // agent is performing a self-update (blue, not counted in uptime)
 ] as const;
 export type MonitorStatus = (typeof MONITOR_STATUS)[number];
 

@@ -47,6 +47,11 @@ export function useSocket() {
       const prevMonitor = useMonitorStore.getState().getMonitor(data.monitorId);
       const prev = prevMonitor?.status;
 
+      // While an agent is self-updating the worker emits 'pending' heartbeats (for
+      // uptime exclusion), but the UI badge should stay on 'updating'. Skip any
+      // 'pending' transition that would overwrite the 'updating' badge.
+      if (data.newStatus === 'pending' && prev === 'updating') return;
+
       // Native app: play sound on down/recovery transitions
       if (isNativeApp) {
         if (data.newStatus === 'down' && prev !== 'down') {
@@ -101,7 +106,7 @@ export function useSocket() {
       fetchTree();
     });
 
-    // ── Agent status — native sounds only (live alerts come via NOTIFICATION_NEW) ──
+    // ── Agent status — native sounds + 'updating' badge propagation ─────────────
     socket.on(SOCKET_EVENTS.AGENT_STATUS_CHANGED, (data: {
       deviceId: number;
       status: string;
@@ -119,6 +124,17 @@ export function useSocket() {
       }
 
       agentStatusRef.current.set(data.deviceId, data.status);
+
+      // Propagate 'updating' (and its clearing) to the linked agent monitor badge.
+      // The worker returns 'pending' heartbeats during update (for uptime exclusion),
+      // but the monitor badge should reflect 'updating' (blue) instead.
+      if (data.status === 'updating') {
+        const agentMonitor = useMonitorStore.getState().getMonitorList()
+          .find(m => m.agentDeviceId === data.deviceId);
+        if (agentMonitor) {
+          updateMonitor(agentMonitor.id, { status: 'updating' });
+        }
+      }
     });
 
     return () => {

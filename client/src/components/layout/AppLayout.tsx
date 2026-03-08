@@ -6,9 +6,13 @@ import { DesktopUpdateBanner } from './DesktopUpdateBanner';
 import { LiveAlerts } from './LiveAlerts';
 import { GlobalAddAgentModal } from './GlobalAddAgentModal';
 import { useUiStore } from '@/store/uiStore';
+import { useSocket } from '@/hooks/useSocket';
 import { cn } from '@/utils/cn';
 
 export function AppLayout() {
+  // Global socket subscriptions — always active regardless of which page is open
+  useSocket();
+
   const { sidebarOpen, sidebarWidth, setSidebarWidth, sidebarFloating } = useUiStore();
   const dragging = useRef(false);
   const startX = useRef(0);
