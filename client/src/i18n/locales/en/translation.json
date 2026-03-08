@@ -950,7 +950,10 @@
   "header": {
     "signedInAs": "Signed in as",
     "disableAlerts": "Disable live alerts",
-    "enableAlerts": "Enable live alerts"
+    "enableAlerts": "Enable live alerts",
+    "socketConnected": "Live — connected to server",
+    "socketReconnecting": "Reconnecting to server…",
+    "socketDisconnected": "Disconnected from server — Click to reload"
   },
   "tenant": {
     "pageTitle": "Workspaces",

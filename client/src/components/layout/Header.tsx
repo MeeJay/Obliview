@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
+import { useSocketStore } from '@/store/socketStore';
 import { Button } from '@/components/common/Button';
 import { NotificationCenter } from './NotificationCenter';
 import { TenantSwitcher } from './TenantSwitcher';
+import { cn } from '@/utils/cn';
 
 /** True when running inside the Obliview native desktop app (gear overlay sets this). */
 const isNativeApp = typeof window !== 'undefined' &&
@@ -15,6 +17,7 @@ export function Header() {
   const { t } = useTranslation();
   const { user, logout } = useAuthStore();
   const { toggleSidebar, sidebarFloating } = useUiStore();
+  const { status: socketStatus } = useSocketStore();
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-bg-secondary px-4">
@@ -54,6 +57,30 @@ export function Header() {
             {t('nav.downloadApp')}
           </Link>
         )}
+
+        {/* Socket connection status dot */}
+        <button
+          onClick={socketStatus !== 'connected' ? () => window.location.reload() : undefined}
+          title={
+            socketStatus === 'connected'    ? t('header.socketConnected')    :
+            socketStatus === 'reconnecting' ? t('header.socketReconnecting') :
+                                              t('header.socketDisconnected')
+          }
+          className={cn(
+            'flex h-6 w-6 items-center justify-center rounded-full transition-opacity',
+            socketStatus !== 'connected' && 'cursor-pointer hover:opacity-70',
+            socketStatus === 'connected'  && 'cursor-default',
+          )}
+        >
+          <span
+            className={cn(
+              'h-2 w-2 rounded-full transition-colors',
+              socketStatus === 'connected'    && 'bg-green-500',
+              socketStatus === 'reconnecting' && 'bg-amber-400 animate-pulse',
+              socketStatus === 'disconnected' && 'bg-red-500 animate-pulse',
+            )}
+          />
+        </button>
 
         {/* Notification Center */}
         <NotificationCenter />
