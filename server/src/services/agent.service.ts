@@ -804,9 +804,22 @@ export const agentService = {
     const overallStatus: 'up' | 'alert' = violations.length > 0 ? 'alert' : 'up';
     const message = violations.length > 0 ? violations.join('; ') : 'All metrics OK';
 
-    // Capture previous status before overwriting snapshot (for transition detection)
+    // Capture previous status before overwriting snapshot (for transition detection).
+    // When no in-memory snapshot exists (e.g. server just restarted), fall back to the
+    // monitor's persisted DB status so we don't fire a false up→alert notification for
+    // a device that was already in alert state before the restart.
     const previousSnapshot = agentPushData.get(device.id);
-    const previousStatus = previousSnapshot?.overallStatus ?? 'up';
+    let previousStatus: 'up' | 'alert';
+    if (previousSnapshot) {
+      previousStatus = previousSnapshot.overallStatus;
+    } else {
+      const monitorStatusRow = await db('monitors')
+        .where({ id: monitor.id })
+        .select('status')
+        .first() as { status: string } | undefined;
+      const dbStatus = monitorStatusRow?.status ?? 'up';
+      previousStatus = dbStatus === 'alert' ? 'alert' : 'up';
+    }
 
     // Update in-memory snapshot
     const snapshot: AgentPushSnapshot = {

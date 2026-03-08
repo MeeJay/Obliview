@@ -371,6 +371,19 @@ export abstract class BaseMonitorWorker {
         );
         return;
       }
+      if (newStatus === 'alert' && !types.alert) {
+        logger.info(
+          `Monitor "${this.config.name}" (id: ${this.config.id}): notification suppressed (alert type disabled)`,
+        );
+        return;
+      }
+      // 'pending' from AgentMonitorWorker = agent is self-updating — respect the 'update' type pref.
+      if (newStatus === 'pending' && !types.update) {
+        logger.info(
+          `Monitor "${this.config.name}" (id: ${this.config.id}): notification suppressed (update type disabled)`,
+        );
+        return;
+      }
     }
 
     // Trigger notifications
