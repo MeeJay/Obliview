@@ -458,11 +458,24 @@ export const importExportController = {
         const _importedActionUuids  = ((data.remediationActions    as any[]) ?? []).map((a: any) => a.uuid).filter(Boolean) as string[];
 
         // For each table, find which of those UUIDs are already owned by another tenant.
-        const foreignGroupUuids   = new Set<string>(_importedGroupUuids.length   ? (await trx('monitor_groups')       .whereIn('uuid', _importedGroupUuids)  .whereNot({ tenant_id: tenantId }).pluck('uuid') as string[]) : []);
-        const foreignMonitorUuids = new Set<string>(_importedMonitorUuids.length ? (await trx('monitors')             .whereIn('uuid', _importedMonitorUuids).whereNot({ tenant_id: tenantId }).pluck('uuid') as string[]) : []);
-        const foreignChannelUuids = new Set<string>(_importedChannelUuids.length ? (await trx('notification_channels').whereIn('uuid', _importedChannelUuids).whereNot({ tenant_id: tenantId }).pluck('uuid') as string[]) : []);
-        const foreignTeamUuids    = new Set<string>(_importedTeamUuids.length    ? (await trx('user_teams')           .whereIn('uuid', _importedTeamUuids)   .whereNot({ tenant_id: tenantId }).pluck('uuid') as string[]) : []);
-        const foreignActionUuids  = new Set<string>(_importedActionUuids.length  ? (await trx('remediation_actions')  .whereIn('uuid', _importedActionUuids) .whereNot({ tenant_id: tenantId }).pluck('uuid') as string[]) : []);
+        // Using select+map rather than pluck() for reliable behaviour within a transaction.
+        const _toUuidSet = (rows: { uuid: string }[]) => new Set<string>(rows.map(r => r.uuid));
+
+        const foreignGroupUuids   = _importedGroupUuids.length
+          ? _toUuidSet(await trx('monitor_groups')       .whereIn('uuid', _importedGroupUuids)  .whereNot({ tenant_id: tenantId }).select('uuid'))
+          : new Set<string>();
+        const foreignMonitorUuids = _importedMonitorUuids.length
+          ? _toUuidSet(await trx('monitors')             .whereIn('uuid', _importedMonitorUuids).whereNot({ tenant_id: tenantId }).select('uuid'))
+          : new Set<string>();
+        const foreignChannelUuids = _importedChannelUuids.length
+          ? _toUuidSet(await trx('notification_channels').whereIn('uuid', _importedChannelUuids).whereNot({ tenant_id: tenantId }).select('uuid'))
+          : new Set<string>();
+        const foreignTeamUuids    = _importedTeamUuids.length
+          ? _toUuidSet(await trx('user_teams')           .whereIn('uuid', _importedTeamUuids)   .whereNot({ tenant_id: tenantId }).select('uuid'))
+          : new Set<string>();
+        const foreignActionUuids  = _importedActionUuids.length
+          ? _toUuidSet(await trx('remediation_actions')  .whereIn('uuid', _importedActionUuids) .whereNot({ tenant_id: tenantId }).select('uuid'))
+          : new Set<string>();
 
         /**
          * Determine the effective (uuid, strategy) for an item being imported.
@@ -986,6 +999,9 @@ export const importExportController = {
 
       res.json({ success: true, data: results });
     } catch (err) {
+      // Log the full error so it's visible in the server terminal
+      console.error('[Import] Failed:', err instanceof Error ? err.message : String(err));
+      if (err instanceof Error && err.stack) console.error(err.stack);
       next(err);
     }
   },
