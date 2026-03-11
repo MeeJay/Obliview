@@ -2634,10 +2634,12 @@ export function AgentDetailPage() {
                 href={obliguardUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Open in Obliguard"
-                className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                  text-[#a5b4fc] bg-[#1e1b4b]/50 border-[#4338ca]/60
+                  hover:text-white hover:bg-[#1e1b4b]/80 hover:border-[#6366f1]"
               >
-                <ArrowLeftRight size={15} />
+                <ArrowLeftRight size={13} />
+                Obliguard
               </a>
             )}
             <button onClick={() => void loadData()}
