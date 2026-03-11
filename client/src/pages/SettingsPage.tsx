@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Shield, Server, Plus, Pencil, Trash2, Wifi, Eye, EyeOff } from 'lucide-react';
+import { Shield, Server, Plus, Pencil, Trash2, Wifi, Eye, EyeOff, ArrowLeftRight } from 'lucide-react';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { NotificationTypesPanel } from '@/components/agent/NotificationTypesPanel';
 import { useAuthStore } from '@/store/authStore';
@@ -8,7 +8,7 @@ import { appConfigApi } from '@/api/appConfig.api';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
-import type { SmtpServer, AppConfig, AgentGlobalConfig, NotificationTypeConfig } from '@obliview/shared';
+import type { SmtpServer, AppConfig, AgentGlobalConfig, NotificationTypeConfig, ObliguardConfig } from '@obliview/shared';
 import { DEFAULT_AGENT_GLOBAL_CONFIG } from '@obliview/shared';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/cn';
@@ -60,6 +60,11 @@ export function SettingsPage() {
   const [agentInterval, setAgentInterval] = useState('');
   const [agentMaxMissed, setAgentMaxMissed] = useState('');
 
+  // ── Obliguard Integration ──
+  const [obliguardForm, setObliguardForm] = useState<ObliguardConfig>({ url: '', apiKey: '' });
+  const [obliguardSaving, setObliguardSaving] = useState(false);
+  const [showObliguardKey, setShowObliguardKey] = useState(false);
+
   useEffect(() => {
     if (!admin) return;
     smtpServerApi.list().then(setServers).catch(() => {});
@@ -69,7 +74,23 @@ export function SettingsPage() {
       setAgentInterval(cfg.checkIntervalSeconds !== null ? String(cfg.checkIntervalSeconds) : '');
       setAgentMaxMissed(cfg.maxMissedPushes !== null ? String(cfg.maxMissedPushes) : '');
     }).catch(() => {});
+    appConfigApi.getObliguardConfig().then((cfg) => {
+      if (cfg) setObliguardForm(cfg);
+    }).catch(() => {});
   }, [admin]);
+
+  async function handleObliguardSubmit(e: FormEvent) {
+    e.preventDefault();
+    setObliguardSaving(true);
+    try {
+      await appConfigApi.setObliguardConfig(obliguardForm);
+      toast.success('Obliguard integration saved');
+    } catch {
+      toast.error('Failed to save Obliguard integration');
+    } finally {
+      setObliguardSaving(false);
+    }
+  }
 
   function openCreate() {
     setEditingServer(null);
@@ -357,6 +378,49 @@ export function SettingsPage() {
                 </table>
               </div>
             )}
+          </div>
+
+          {/* ── Obliguard Integration ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <ArrowLeftRight size={16} className="text-text-muted" />
+              <h2 className="text-lg font-semibold text-text-primary">Obliguard Integration</h2>
+            </div>
+            <div className="rounded-lg border border-border bg-bg-secondary p-5">
+              <p className="text-sm text-text-muted mb-4">
+                Link Obliview to an Obliguard instance so agents can be cross-referenced between the two apps.
+              </p>
+              <form onSubmit={handleObliguardSubmit} className="space-y-3">
+                <Input
+                  label="Obliguard URL"
+                  type="url"
+                  placeholder="https://obliguard.example.com"
+                  value={obliguardForm.url}
+                  onChange={(e) => setObliguardForm((f) => ({ ...f, url: e.target.value }))}
+                />
+                <div className="relative">
+                  <Input
+                    label="API Key"
+                    type={showObliguardKey ? 'text' : 'password'}
+                    placeholder="Paste the API key configured in Obliguard"
+                    value={obliguardForm.apiKey}
+                    onChange={(e) => setObliguardForm((f) => ({ ...f, apiKey: e.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowObliguardKey((v) => !v)}
+                    className="absolute right-2.5 bottom-2 text-text-muted hover:text-text-primary"
+                  >
+                    {showObliguardKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Button type="submit" disabled={obliguardSaving}>
+                    {obliguardSaving ? 'Saving…' : 'Save'}
+                  </Button>
+                </div>
+              </form>
+            </div>
           </div>
 
           {/* ── Security / 2FA ── */}

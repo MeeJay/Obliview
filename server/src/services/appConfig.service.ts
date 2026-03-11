@@ -1,8 +1,9 @@
 import { db } from '../db';
-import type { AppConfig, AgentGlobalConfig, NotificationTypeConfig } from '@obliview/shared';
+import type { AppConfig, AgentGlobalConfig, NotificationTypeConfig, ObliguardConfig } from '@obliview/shared';
 import { DEFAULT_NOTIFICATION_TYPES } from '@obliview/shared';
 
 const AGENT_GLOBAL_CONFIG_KEY = 'agent_global_config';
+const OBLIGUARD_CONFIG_KEY = 'obliguard_config';
 
 export const appConfigService = {
   async get(key: string): Promise<string | null> {
@@ -20,11 +21,38 @@ export const appConfigService = {
   async getAll(): Promise<AppConfig> {
     const rows = await db('app_config').select('key', 'value');
     const map = Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value]));
+
+    // Parse obliguard URL (but NOT the apiKey — never expose that via getAll)
+    let obliguard_url: string | null = null;
+    if (map[OBLIGUARD_CONFIG_KEY]) {
+      try {
+        const cfg = JSON.parse(map[OBLIGUARD_CONFIG_KEY]) as ObliguardConfig;
+        obliguard_url = cfg.url || null;
+      } catch { /* ignore */ }
+    }
+
     return {
       allow_2fa: map['allow_2fa'] === 'true',
       force_2fa: map['force_2fa'] === 'true',
       otp_smtp_server_id: map['otp_smtp_server_id'] ? parseInt(map['otp_smtp_server_id'], 10) : null,
+      obliguard_url,
     };
+  },
+
+  /** Get Obliguard integration config (includes API key — admin only) */
+  async getObliguardConfig(): Promise<ObliguardConfig | null> {
+    const raw = await this.get(OBLIGUARD_CONFIG_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as ObliguardConfig;
+    } catch {
+      return null;
+    }
+  },
+
+  /** Save Obliguard integration config */
+  async setObliguardConfig(cfg: ObliguardConfig): Promise<void> {
+    await this.set(OBLIGUARD_CONFIG_KEY, JSON.stringify(cfg));
   },
 
   /** Get global agent defaults from app_config */

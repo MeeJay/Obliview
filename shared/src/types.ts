@@ -413,6 +413,14 @@ export interface AppConfig {
   allow_2fa: boolean;
   force_2fa: boolean;
   otp_smtp_server_id: number | null;
+  /** Obliguard server URL — null when not configured. API key is never exposed via getAll(). */
+  obliguard_url: string | null;
+}
+
+/** Obliguard integration config — stored as JSON under key "obliguard_config" in app_config. */
+export interface ObliguardConfig {
+  url: string;
+  apiKey: string;
 }
 
 /**

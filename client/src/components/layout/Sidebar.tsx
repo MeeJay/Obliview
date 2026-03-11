@@ -37,6 +37,7 @@ import { useGroupStore } from '@/store/groupStore';
 import { useUiStore } from '@/store/uiStore';
 import { GroupTree } from '@/components/groups/GroupTree';
 import { agentApi } from '@/api/agent.api';
+import { appConfigApi } from '@/api/appConfig.api';
 import { getSocket } from '@/socket/socketClient';
 import type { AgentDevice, MonitorStatus } from '@obliview/shared';
 import { SOCKET_EVENTS } from '@obliview/shared';
@@ -201,6 +202,7 @@ export function Sidebar() {
   // Keyed by deviceId. Overrides the monitorStore lookup (which requires agentDeviceId
   // to be populated in the store — not always reliable).
   const [deviceStatuses, setDeviceStatuses] = useState<Map<number, string>>(new Map());
+  const [obliguardUrl, setObliguardUrl] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
 
@@ -224,6 +226,13 @@ export function Sidebar() {
   useEffect(() => {
     fetchMonitors();
   }, [fetchMonitors]);
+
+  // Load Obliguard URL from config (for the switch button)
+  useEffect(() => {
+    appConfigApi.getConfig()
+      .then((cfg) => setObliguardUrl(cfg.obliguard_url ?? null))
+      .catch(() => {});
+  }, []);
 
   // Fetch approved+suspended devices for sidebar (admin only)
   const loadDevices = useCallback(() => {
@@ -419,18 +428,31 @@ export function Sidebar() {
           <img src="/logo.webp" alt="Obliview" className="h-8 w-8 rounded-lg" />
           <span className="text-lg font-semibold text-text-primary">Obliview</span>
         </Link>
-        <button
-          onClick={toggleSidebarFloating}
-          title={sidebarFloating ? t('nav.pinSidebar') : t('nav.floatSidebar')}
-          className={cn(
-            'p-1.5 rounded transition-colors',
-            sidebarFloating
-              ? 'text-accent hover:text-accent hover:bg-accent/10'
-              : 'text-text-muted hover:text-text-primary hover:bg-bg-hover',
+        <div className="flex items-center gap-1">
+          {obliguardUrl && (
+            <a
+              href={obliguardUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Switch to Obliguard"
+              className="p-1.5 rounded transition-colors text-text-muted hover:text-text-primary hover:bg-bg-hover"
+            >
+              <ArrowLeftRight size={15} />
+            </a>
           )}
-        >
-          {sidebarFloating ? <PanelLeft size={15} /> : <PanelLeftClose size={15} />}
-        </button>
+          <button
+            onClick={toggleSidebarFloating}
+            title={sidebarFloating ? t('nav.pinSidebar') : t('nav.floatSidebar')}
+            className={cn(
+              'p-1.5 rounded transition-colors',
+              sidebarFloating
+                ? 'text-accent hover:text-accent hover:bg-accent/10'
+                : 'text-text-muted hover:text-text-primary hover:bg-bg-hover',
+            )}
+          >
+            {sidebarFloating ? <PanelLeft size={15} /> : <PanelLeftClose size={15} />}
+          </button>
+        </div>
       </div>
 
       {/* Add Monitor / Add Agent buttons */}

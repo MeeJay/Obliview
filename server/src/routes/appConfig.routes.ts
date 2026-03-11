@@ -14,4 +14,8 @@ router.put('/:key', requireAuth, requireRole('admin'), appConfigController.set);
 router.get('/agent-global', requireAuth, requireRole('admin'), appConfigController.getAgentGlobal);
 router.patch('/agent-global', requireAuth, requireRole('admin'), appConfigController.patchAgentGlobal);
 
+// Obliguard integration config — admin only (includes apiKey)
+router.get('/obliguard', requireAuth, requireRole('admin'), appConfigController.getObliguardConfig);
+router.put('/obliguard', requireAuth, requireRole('admin'), appConfigController.setObliguardConfig);
+
 export default router;

@@ -6,13 +6,14 @@ import {
   Network, Activity, Server, AlertTriangle, Wind, Thermometer,
   MonitorDot, ArrowDownToLine, ArrowUpFromLine,
   Pencil, Check, X, LayoutDashboard,
-  MemoryStick, Wifi, RotateCcw,
+  MemoryStick, Wifi, RotateCcw, ArrowLeftRight,
 } from 'lucide-react';
 import type { AgentDevice, AgentThresholds, AgentMetricThreshold, AgentTempThreshold, AgentDisplayConfig, NotificationChannel, NotificationTypeConfig } from '@obliview/shared';
 import { DEFAULT_AGENT_THRESHOLDS, SOCKET_EVENTS } from '@obliview/shared';
 import { AgentDisplayConfigModal } from '../components/agent/AgentDisplayConfigModal';
 import { NotificationTypesPanel } from '../components/agent/NotificationTypesPanel';
 import { agentApi } from '../api/agent.api';
+import { appConfigApi } from '../api/appConfig.api';
 import { monitorsApi } from '../api/monitors.api';
 import type { AgentMetrics, AgentPushSnapshot } from '../types/agent';
 import { getSocket } from '../socket/socketClient';
@@ -2307,6 +2308,9 @@ export function AgentDetailPage() {
   // Live operational status pushed by socket (e.g. 'updating')
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
 
+  // Obliguard cross-link
+  const [obliguardUrl, setObliguardUrl] = useState<string | null>(null);
+
   const openConfigModal = (section: 'cpu' | 'ram' | 'gpu' | 'drives' | 'network' | 'temps') => {
     setConfigModalSection(section);
     setConfigModalOpen(true);
@@ -2371,6 +2375,15 @@ export function AgentDetailPage() {
   useEffect(() => {
     if (device) setDisplayConfig(mergeDisplayConfig(device.displayConfig ?? null));
   }, [device?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Look up this device in Obliguard (if integration is configured)
+  useEffect(() => {
+    if (!device?.uuid) return;
+    setObliguardUrl(null);
+    appConfigApi.proxyObliguardLink(device.uuid)
+      .then((url) => setObliguardUrl(url))
+      .catch(() => {});
+  }, [device?.uuid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -2615,6 +2628,17 @@ export function AgentDetailPage() {
                 title="Display Configuration">
                 <Settings2 size={15} />
               </button>
+            )}
+            {obliguardUrl && (
+              <a
+                href={obliguardUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open in Obliguard"
+                className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                <ArrowLeftRight size={15} />
+              </a>
             )}
             <button onClick={() => void loadData()}
               className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors" title="Refresh">

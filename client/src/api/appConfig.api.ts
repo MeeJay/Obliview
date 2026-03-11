@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { AppConfig, AgentGlobalConfig, ApiResponse } from '@obliview/shared';
+import type { AppConfig, AgentGlobalConfig, ObliguardConfig, ApiResponse } from '@obliview/shared';
 
 export const appConfigApi = {
   async getConfig(): Promise<AppConfig> {
@@ -19,5 +19,19 @@ export const appConfigApi = {
   async patchAgentGlobal(patch: Partial<AgentGlobalConfig>): Promise<AgentGlobalConfig> {
     const res = await apiClient.patch<ApiResponse<AgentGlobalConfig>>('/admin/config/agent-global', patch);
     return res.data.data!;
+  },
+
+  async getObliguardConfig(): Promise<ObliguardConfig> {
+    const res = await apiClient.get<ApiResponse<ObliguardConfig>>('/admin/config/obliguard');
+    return res.data.data!;
+  },
+
+  async setObliguardConfig(cfg: ObliguardConfig): Promise<void> {
+    await apiClient.put('/admin/config/obliguard', cfg);
+  },
+
+  async proxyObliguardLink(uuid: string): Promise<string | null> {
+    const res = await apiClient.get<ApiResponse<{ obliguardUrl: string | null }>>(`/obliguard/proxy-link?uuid=${encodeURIComponent(uuid)}`);
+    return res.data.data?.obliguardUrl ?? null;
   },
 };
