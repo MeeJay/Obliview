@@ -116,11 +116,12 @@ router.get('/validate-token', async (req: Request, res: Response, next: NextFunc
     const user = await authService.getUserById(row.user_id);
     if (!user || !user.isActive) { res.status(404).json({ success: false, error: 'User not found' }); return; }
 
+    // Use { user: { ... } } format — symmetric with Obliguard's validate-token response format.
     res.json({
-      success: true,
-      data: {
+      user: {
         id: user.id,
         username: user.username,
+        displayName: user.displayName ?? null,
         email: user.email ?? null,
         role: user.role,
       },
@@ -201,12 +202,11 @@ router.post('/exchange', async (req: Request, res: Response, next: NextFunction)
     }
 
     const body = await fetchRes.json() as {
-      success: boolean;
-      data?: { id: number; username: string; email?: string | null; role: string };
+      user?: { id: number; username: string; displayName?: string | null; email?: string | null; role: string };
     };
-    if (!body.success || !body.data) throw new AppError(401, 'Invalid SSO response');
+    if (!body.user) throw new AppError(401, 'Invalid SSO response');
 
-    const { id: foreignId, username, email, role: _role } = body.data;
+    const { id: foreignId, username, email, role: _role } = body.user;
 
     // Find or create the local foreign user
     const { user, isFirstLogin } = await authService.findOrCreateForeignUser(
