@@ -3,7 +3,7 @@ import { useAuthStore } from '@/store/authStore';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 
 // Must match REQUIRED_ENROLLMENT_VERSION in server/src/controllers/enrollment.controller.ts
-const REQUIRED_ENROLLMENT_VERSION = 1;
+const REQUIRED_ENROLLMENT_VERSION = 2;
 
 interface ProtectedRouteProps {
   requiredRole?: string;

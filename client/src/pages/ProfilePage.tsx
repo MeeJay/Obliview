@@ -1,7 +1,9 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Save, KeyRound, Bell, CheckCircle2, AlertTriangle, QrCode, Mail, ArrowLeftRight } from 'lucide-react';
+import { User, Save, KeyRound, Bell, CheckCircle2, AlertTriangle, QrCode, Mail, ArrowLeftRight, Palette } from 'lucide-react';
 import { profileApi } from '@/api/profile.api';
+import { ThemePicker } from '@/components/ThemePicker';
+import { applyTheme, type AppTheme } from '@/utils/theme';
 import { appConfigApi } from '@/api/appConfig.api';
 import { twoFactorApi, type TwoFactorStatus } from '@/api/twoFactor.api';
 import { useAuthStore } from '@/store/authStore';
@@ -28,6 +30,10 @@ export function ProfilePage() {
 
   const [savingPrefs, setSavingPrefs] = useState(false);
 
+  // Theme state
+  const [preferredTheme, setPreferredTheme] = useState<AppTheme>('modern');
+  const [savingTheme, setSavingTheme] = useState(false);
+
   // 2FA state
   const [allow2fa, setAllow2fa] = useState(false);
   const [tfaStatus, setTfaStatus] = useState<TwoFactorStatus | null>(null);
@@ -48,6 +54,9 @@ export function ProfilePage() {
       setDisplayName(profile.displayName || '');
       setEmail((profile as any).email || '');
       setPreferredLanguage((profile as any).preferredLanguage || '');
+      if (profile.preferences?.preferredTheme) {
+        setPreferredTheme(profile.preferences.preferredTheme);
+      }
     });
     appConfigApi.getConfig().then((cfg) => {
       setAllow2fa(cfg.allow_2fa);
@@ -110,6 +119,26 @@ export function ProfilePage() {
       toast.error(t('profile.alerts.failedPreferences'));
     } finally {
       setSavingPrefs(false);
+    }
+  };
+
+  const handleThemeChange = async (theme: AppTheme) => {
+    setPreferredTheme(theme);
+    applyTheme(theme); // apply immediately for live preview
+    setSavingTheme(true);
+    try {
+      await profileApi.update({
+        preferences: {
+          toastEnabled: alertEnabled,
+          toastPosition: alertPosition,
+          preferredTheme: theme,
+        },
+      });
+      toast.success(t('profile.appearance.saved'));
+    } catch {
+      toast.error(t('profile.appearance.failed'));
+    } finally {
+      setSavingTheme(false);
     }
   };
 
@@ -234,6 +263,23 @@ export function ProfilePage() {
           </Button>
         </div>
       </form>
+
+      {/* Appearance section */}
+      <div className="mb-8">
+        <div className="rounded-lg border border-border bg-bg-secondary p-5 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Palette size={18} className="text-accent" />
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
+              {t('profile.appearance.title')}
+            </h2>
+            {savingTheme && (
+              <span className="ml-auto text-xs text-text-muted">{t('common.saving')}</span>
+            )}
+          </div>
+          <p className="text-xs text-text-muted -mt-2">{t('profile.appearance.subtitle')}</p>
+          <ThemePicker value={preferredTheme} onChange={handleThemeChange} />
+        </div>
+      </div>
 
       {/* Live Alert Notifications section */}
       <div className="mb-8">

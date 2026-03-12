@@ -158,6 +158,7 @@
     "stepLanguage": "Language",
     "stepProfile": "Profile",
     "stepAlerts": "Alerts",
+    "stepAppearance": "Appearance",
     "stepSecurity": "Security",
     "completing": "Completing…",
     "complete": "Finish setup",
@@ -191,6 +192,11 @@
       "topCenter": "Top center",
       "topCenterDesc": "Latest alert only, auto-dismiss after 10 seconds.",
       "previewAlt": "Alert position preview"
+    },
+
+    "appearance": {
+      "title": "Choose your theme",
+      "subtitle": "Pick the interface style that suits you. You can change this anytime from your profile."
     },
 
     "security": {
@@ -235,6 +241,10 @@
     "sectionAlert": "Alert",
     "sectionSslExpired": "SSL Expired",
     "sectionUngrouped": "Ungrouped",
+    "sectionMonitors": "Monitors",
+    "sectionAgents": "Agents",
+    "layoutList": "List view",
+    "layoutCards": "Cards view",
     "noMonitors": "No monitors found",
     "selectedCount_one": "{{count}} monitor selected",
     "selectedCount_other": "{{count}} monitors selected",
@@ -598,6 +608,13 @@
     "saveProfile": "Save Profile",
     "profileUpdated": "Profile updated",
     "failedProfile": "Failed to update profile",
+
+    "appearance": {
+      "title": "Appearance",
+      "subtitle": "Select the visual theme for your interface.",
+      "saved": "Theme saved",
+      "failed": "Failed to save theme"
+    },
 
     "password": {
       "title": "Change Password",

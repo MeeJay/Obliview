@@ -8,9 +8,11 @@ import { useAuthStore } from '@/store/authStore';
 import { SUPPORTED_LANGUAGES, setLanguage } from '@/i18n';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { ThemePicker } from '@/components/ThemePicker';
+import { applyTheme, type AppTheme } from '@/utils/theme';
 
-type Step = 'language' | 'profile' | 'alerts' | 'security';
-const STEPS: Step[] = ['language', 'profile', 'alerts', 'security'];
+type Step = 'language' | 'profile' | 'alerts' | 'appearance' | 'security';
+const STEPS: Step[] = ['language', 'profile', 'alerts', 'appearance', 'security'];
 
 interface EnrollData {
   preferredLanguage: string;
@@ -18,6 +20,7 @@ interface EnrollData {
   email: string;
   toastEnabled: boolean;
   toastPosition: 'bottom-right' | 'top-center';
+  preferredTheme: AppTheme;
 }
 
 // ── Language flags (emoji) ──────────────────────────────────────────────────
@@ -32,10 +35,11 @@ const LANG_FLAGS: Record<string, string> = {
 function Stepper({ currentStep }: { currentStep: Step }) {
   const { t } = useTranslation();
   const labels: Record<Step, string> = {
-    language: t('enrollment.stepLanguage'),
-    profile:  t('enrollment.stepProfile'),
-    alerts:   t('enrollment.stepAlerts'),
-    security: t('enrollment.stepSecurity'),
+    language:   t('enrollment.stepLanguage'),
+    profile:    t('enrollment.stepProfile'),
+    alerts:     t('enrollment.stepAlerts'),
+    appearance: t('enrollment.stepAppearance'),
+    security:   t('enrollment.stepSecurity'),
   };
   const currentIdx = STEPS.indexOf(currentStep);
 
@@ -60,7 +64,7 @@ function Stepper({ currentStep }: { currentStep: Step }) {
             </span>
           </div>
           {idx < STEPS.length - 1 && (
-            <div className={`w-12 sm:w-20 h-0.5 mx-1 mb-5 transition-colors ${idx < currentIdx ? 'bg-primary' : 'bg-border'}`} />
+            <div className={`w-10 sm:w-16 h-0.5 mx-1 mb-5 transition-colors ${idx < currentIdx ? 'bg-primary' : 'bg-border'}`} />
           )}
         </div>
       ))}
@@ -148,17 +152,13 @@ function ProfileStep({
 function AlertPreviewSvg({ position }: { position: 'bottom-right' | 'top-center' }) {
   return (
     <svg viewBox="0 0 200 120" className="w-full max-w-xs mx-auto rounded-lg border border-border bg-bg-primary">
-      {/* Screen body */}
       <rect x="4" y="4" width="192" height="112" rx="6" fill="currentColor" className="text-bg-secondary" stroke="currentColor" strokeWidth="1" />
-      {/* Top bar */}
       <rect x="4" y="4" width="192" height="16" rx="6" fill="currentColor" className="text-bg-hover" />
       <rect x="8" y="8" width="40" height="8" rx="3" fill="currentColor" className="text-border" />
       <rect x="160" y="8" width="30" height="8" rx="3" fill="currentColor" className="text-border" />
-      {/* Content lines */}
       {[28, 38, 48, 58].map((y) => (
         <rect key={y} x="12" y={y} width={30 + (y % 20) * 2} height="5" rx="2" fill="currentColor" className="text-border opacity-50" />
       ))}
-      {/* Alert pill */}
       {position === 'bottom-right' ? (
         <>
           <rect x="110" y="82" width="80" height="22" rx="4" fill="currentColor" className="text-primary" opacity="0.9" />
@@ -192,12 +192,7 @@ function AlertsStep({
 
       <label className="flex items-start gap-3 cursor-pointer mb-5">
         <div className="relative mt-0.5">
-          <input
-            type="checkbox"
-            className="sr-only peer"
-            checked={enabled}
-            onChange={(e) => onEnabled(e.target.checked)}
-          />
+          <input type="checkbox" className="sr-only peer" checked={enabled} onChange={(e) => onEnabled(e.target.checked)} />
           <div className="w-9 h-5 rounded-full border-2 border-border peer-checked:border-primary peer-checked:bg-primary bg-bg-hover transition-colors" />
           <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
         </div>
@@ -241,7 +236,25 @@ function AlertsStep({
   );
 }
 
-// ── Step 4: Security (TOTP) ──────────────────────────────────────────────────
+// ── Step 4: Appearance (theme picker) ────────────────────────────────────────
+function AppearanceStep({ theme, onTheme }: { theme: AppTheme; onTheme: (v: AppTheme) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-text-primary mb-1">{t('enrollment.appearance.title')}</h2>
+      <p className="text-sm text-text-muted mb-5">{t('enrollment.appearance.subtitle')}</p>
+      <ThemePicker
+        value={theme}
+        onChange={(v) => {
+          onTheme(v);
+          applyTheme(v); // live preview while choosing
+        }}
+      />
+    </div>
+  );
+}
+
+// ── Step 5: Security (TOTP) ──────────────────────────────────────────────────
 function SecurityStep({
   totpAlreadyEnabled, totpSetup, totpCode, totpLoading,
   onSetupTotp, onTotpCode, onSkip,
@@ -332,6 +345,7 @@ export function EnrollmentPage() {
     email: user?.email ?? '',
     toastEnabled: true,
     toastPosition: 'bottom-right',
+    preferredTheme: user?.preferences?.preferredTheme ?? 'modern',
   });
 
   const [emailError, setEmailError] = useState('');
@@ -345,7 +359,6 @@ export function EnrollmentPage() {
 
   const currentIdx = STEPS.indexOf(step);
 
-  // Check TOTP status when entering security step
   const handleAdvanceToSecurity = async () => {
     try {
       const status = await twoFactorApi.getStatus();
@@ -372,33 +385,21 @@ export function EnrollmentPage() {
     e?.preventDefault();
     setError('');
 
-    if (step === 'language') {
-      setStep('profile');
-      return;
-    }
+    if (step === 'language') { setStep('profile'); return; }
 
     if (step === 'profile') {
-      // Validate email
-      if (!data.email) {
-        setEmailError(t('enrollment.profile.emailRequired'));
-        return;
-      }
+      if (!data.email) { setEmailError(t('enrollment.profile.emailRequired')); return; }
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(data.email)) {
-        setEmailError(t('enrollment.profile.emailInvalid'));
-        return;
-      }
+      if (!emailRegex.test(data.email)) { setEmailError(t('enrollment.profile.emailInvalid')); return; }
       setEmailError('');
       setStep('alerts');
       return;
     }
 
-    if (step === 'alerts') {
-      await handleAdvanceToSecurity();
-      return;
-    }
+    if (step === 'alerts') { setStep('appearance'); return; }
+    if (step === 'appearance') { await handleAdvanceToSecurity(); return; }
 
-    // step === 'security' — complete enrollment
+    // step === 'security'
     await completeEnrollment();
   };
 
@@ -406,7 +407,6 @@ export function EnrollmentPage() {
     setCompleting(true);
     setError('');
     try {
-      // If TOTP code was entered, enable TOTP first
       if (totpSetup && totpCode.length === 6) {
         await twoFactorApi.totpEnable(totpCode);
       }
@@ -417,6 +417,7 @@ export function EnrollmentPage() {
         preferredLanguage: data.preferredLanguage,
         toastEnabled: data.toastEnabled,
         toastPosition: data.toastPosition,
+        preferredTheme: data.preferredTheme,
       });
 
       await checkSession();
@@ -446,49 +447,40 @@ export function EnrollmentPage() {
   return (
     <div className="min-h-screen bg-bg-primary flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-xl">
-        {/* Header */}
         <div className="text-center mb-8">
           <img src="/logo.webp" alt="Obliview" className="mx-auto h-14 w-14 mb-3" />
           <h1 className="text-2xl font-bold text-text-primary">{t('enrollment.welcomeTitle', { appName: 'Obliview' })}</h1>
           <p className="text-sm text-text-muted mt-1">{t('enrollment.welcomeSubtitle')}</p>
         </div>
 
-        {/* Stepper */}
         <Stepper currentStep={step} />
 
-        {/* Card */}
         <form onSubmit={handleNext} className="rounded-xl border border-border bg-bg-secondary p-6 shadow-sm">
           {step === 'language' && (
-            <LanguageStep
-              selected={data.preferredLanguage}
-              onSelect={(code) => setData((d) => ({ ...d, preferredLanguage: code }))}
-            />
+            <LanguageStep selected={data.preferredLanguage} onSelect={(code) => setData((d) => ({ ...d, preferredLanguage: code }))} />
           )}
           {step === 'profile' && (
             <ProfileStep
-              displayName={data.displayName}
-              email={data.email}
-              emailError={emailError}
+              displayName={data.displayName} email={data.email} emailError={emailError}
               onDisplayName={(v) => setData((d) => ({ ...d, displayName: v }))}
               onEmail={(v) => setData((d) => ({ ...d, email: v }))}
             />
           )}
           {step === 'alerts' && (
             <AlertsStep
-              enabled={data.toastEnabled}
-              position={data.toastPosition}
+              enabled={data.toastEnabled} position={data.toastPosition}
               onEnabled={(v) => setData((d) => ({ ...d, toastEnabled: v }))}
               onPosition={(v) => setData((d) => ({ ...d, toastPosition: v }))}
             />
           )}
+          {step === 'appearance' && (
+            <AppearanceStep theme={data.preferredTheme} onTheme={(v) => setData((d) => ({ ...d, preferredTheme: v }))} />
+          )}
           {step === 'security' && (
             <SecurityStep
-              totpAlreadyEnabled={totpAlreadyEnabled}
-              totpSetup={totpSetup}
-              totpCode={totpCode}
-              totpLoading={totpLoading}
-              onSetupTotp={handleSetupTotp}
-              onTotpCode={setTotpCode}
+              totpAlreadyEnabled={totpAlreadyEnabled} totpSetup={totpSetup}
+              totpCode={totpCode} totpLoading={totpLoading}
+              onSetupTotp={handleSetupTotp} onTotpCode={setTotpCode}
               onSkip={() => { setTotpSkipped(true); completeEnrollment(); }}
             />
           )}
@@ -499,7 +491,6 @@ export function EnrollmentPage() {
             </div>
           )}
 
-          {/* Navigation buttons */}
           {!(step === 'security' && !totpAlreadyEnabled && !totpSetup) && (
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-border">
               <button
@@ -509,18 +500,13 @@ export function EnrollmentPage() {
               >
                 ← {t('common.back')}
               </button>
-              <Button
-                type="submit"
-                loading={completing}
-                disabled={!!isNextDisabled}
-              >
+              <Button type="submit" loading={completing} disabled={!!isNextDisabled}>
                 {nextLabel}
               </Button>
             </div>
           )}
         </form>
 
-        {/* Step indicator */}
         <p className="text-center text-xs text-text-muted mt-4">
           {t('enrollment.step', { current: currentIdx + 1, total: STEPS.length })}
         </p>

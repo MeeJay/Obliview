@@ -2,6 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   Theme CSS custom properties
+   Values are space-separated RGB triplets so Tailwind's opacity modifier syntax
+   (e.g. bg-accent/30) works: Tailwind emits  rgb(var(--c-X) / 0.3)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Modern UI (default) ──────────────────────────────────────────────────── */
+:root,
+[data-theme="modern"] {
+  --c-bg-primary:            13 17 23;
+  --c-bg-secondary:          22 27 34;
+  --c-bg-tertiary:           28 35 51;
+  --c-bg-hover:              33 38 45;
+  --c-bg-active:             40 46 56;
+
+  --c-border:                48 54 61;
+  --c-border-light:          61 68 77;
+
+  --c-text-primary:          230 237 243;
+  --c-text-secondary:        139 148 158;
+  --c-text-muted:            110 118 129;
+
+  --c-status-up:             46 160 67;
+  --c-status-up-bg:          13 40 24;
+  --c-status-down:           248 81 73;
+  --c-status-down-bg:        61 20 24;
+  --c-status-pending:        210 153 34;
+  --c-status-pending-bg:     46 33 17;
+  --c-status-maintenance:    88 166 255;
+  --c-status-maintenance-bg: 13 37 70;
+  --c-status-paused:         139 148 158;
+  --c-status-paused-bg:      28 35 51;
+  --c-status-ssl-warning:    210 153 34;
+  --c-status-ssl-warning-bg: 46 33 17;
+  --c-status-ssl-expired:    163 113 247;
+  --c-status-ssl-expired-bg: 39 26 69;
+
+  --c-accent:                88 166 255;
+  --c-accent-hover:          121 192 255;
+  --c-accent-dark:           31 111 235;
+  --c-primary:               88 166 255;
+}
+
+/* ── Neon UI ──────────────────────────────────────────────────────────────── */
+[data-theme="neon"] {
+  --c-bg-primary:            7 10 15;
+  --c-bg-secondary:          13 17 23;
+  --c-bg-tertiary:           17 24 39;
+  --c-bg-hover:              26 31 46;
+  --c-bg-active:             31 37 55;
+
+  --c-border:                28 42 63;
+  --c-border-light:          36 53 80;
+
+  --c-text-primary:          224 240 255;
+  --c-text-secondary:        120 153 184;
+  --c-text-muted:            74 106 136;
+
+  --c-status-up:             0 255 136;
+  --c-status-up-bg:          0 26 16;
+  --c-status-down:           255 56 96;
+  --c-status-down-bg:        42 0 16;
+  --c-status-pending:        255 170 0;
+  --c-status-pending-bg:     32 21 0;
+  --c-status-maintenance:    0 200 255;
+  --c-status-maintenance-bg: 0 30 46;
+  --c-status-paused:         74 106 136;
+  --c-status-paused-bg:      17 24 39;
+  --c-status-ssl-warning:    255 170 0;
+  --c-status-ssl-warning-bg: 32 21 0;
+  --c-status-ssl-expired:    176 106 255;
+  --c-status-ssl-expired-bg: 26 0 64;
+
+  --c-accent:                0 200 255;
+  --c-accent-hover:          64 216 255;
+  --c-accent-dark:           0 144 187;
+  --c-primary:               0 200 255;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Base styles
+   ───────────────────────────────────────────────────────────────────────────── */
 @layer base {
   body {
     @apply bg-bg-primary text-text-primary antialiased;
@@ -23,5 +105,69 @@
 
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-border-light;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Neon UI — glow effects
+   Scoped to [data-theme="neon"] so they only apply when neon is active.
+   ───────────────────────────────────────────────────────────────────────────── */
+[data-theme="neon"] {
+  /* Accent elements glow */
+  .text-accent,
+  .text-primary {
+    text-shadow: 0 0 12px rgb(var(--c-accent) / 0.5);
+  }
+
+  /* Status "up" text glow */
+  .text-status-up {
+    text-shadow: 0 0 10px rgb(var(--c-status-up) / 0.6);
+  }
+
+  /* Status "down" text glow */
+  .text-status-down {
+    text-shadow: 0 0 10px rgb(var(--c-status-down) / 0.5);
+  }
+
+  /* Left-border status glow on monitor cards */
+  .border-l-status-up {
+    box-shadow: -3px 0 10px rgb(var(--c-status-up) / 0.45);
+  }
+
+  .border-l-status-down {
+    box-shadow: -3px 0 10px rgb(var(--c-status-down) / 0.45);
+  }
+
+  .border-l-status-pending {
+    box-shadow: -3px 0 10px rgb(var(--c-status-pending) / 0.45);
+  }
+
+  /* Accent border glow */
+  .border-accent,
+  .ring-accent,
+  .focus\:ring-accent:focus {
+    box-shadow: 0 0 0 1px rgb(var(--c-accent) / 0.4),
+                0 0 12px rgb(var(--c-accent) / 0.2);
+  }
+
+  /* Primary button glow */
+  button.bg-accent,
+  a.bg-accent {
+    box-shadow: 0 0 14px rgb(var(--c-accent) / 0.4),
+                0 2px 8px rgb(0 0 0 / 0.4);
+  }
+
+  /* Status badge / dot glow */
+  .bg-status-up {
+    box-shadow: 0 0 8px rgb(var(--c-status-up) / 0.55);
+  }
+
+  .bg-status-down {
+    box-shadow: 0 0 8px rgb(var(--c-status-down) / 0.5);
+  }
+
+  /* Subtle card border accent on secondary bg cards */
+  .bg-bg-secondary {
+    border-color: rgb(var(--c-border) / 1);
   }
 }

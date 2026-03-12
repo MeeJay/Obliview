@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Plus, CheckSquare, Activity, Clock, AlertTriangle, ShieldOff, Folder, Server, Bell } from 'lucide-react';
+import { Plus, CheckSquare, Activity, Clock, AlertTriangle, ShieldOff, Folder, Server, Bell, LayoutList, LayoutGrid } from 'lucide-react';
 import type { Monitor, GroupTreeNode } from '@obliview/shared';
 import { useMonitorStore } from '@/store/monitorStore';
 import { useGroupStore } from '@/store/groupStore';
@@ -14,6 +14,10 @@ import { BulkEditModal } from '@/components/monitors/BulkEditModal';
 import { estimateMaxBars } from '@/components/monitors/HeartbeatBar';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { HorizontalCarousel } from '@/components/dashboard/HorizontalCarousel';
+import { MonitorCardTile } from '@/components/dashboard/MonitorCardTile';
+import { AgentCardTile } from '@/components/dashboard/AgentCardTile';
+import { cn } from '@/utils/cn';
 import toast from 'react-hot-toast';
 
 
@@ -64,7 +68,7 @@ function distributeColumns<T>(items: T[], getWeight: (item: T) => number): [T[],
 export function DashboardPage() {
   const { t } = useTranslation();
   const { canCreate } = useAuthStore();
-  const { openAddAgentModal } = useUiStore();
+  const { openAddAgentModal, dashboardLayout, setDashboardLayout } = useUiStore();
   const { fetchMonitors, fetchAllHeartbeats, getMonitorList, getMonitorsByGroup, getRecentHeartbeats, isLoading } = useMonitorStore();
   const { tree, fetchTree } = useGroupStore();
   const [selectionMode, setSelectionMode] = useState(false);
@@ -102,6 +106,27 @@ export function DashboardPage() {
   const pausedCount = monitors.filter((m) => m.status === 'paused').length;
   const sslWarnCount = monitors.filter((m) => m.status === 'ssl_warning').length;
   const sslExpiredCount = monitors.filter((m) => m.status === 'ssl_expired').length;
+
+  // ── Cards-layout: flat sorted lists ──
+  const STATUS_ORDER: Record<string, number> = {
+    down: 0, alert: 1, ssl_expired: 2, ssl_warning: 3,
+    pending: 4, up: 5, paused: 6, maintenance: 7, inactive: 8,
+  };
+  const sortByStatus = (a: Monitor, b: Monitor) =>
+    (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99) ||
+    a.name.localeCompare(b.name);
+
+  const cardMonitors = useMemo(
+    () => monitors.filter((m) => m.type !== 'agent').sort(sortByStatus),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [monitors],
+  );
+  const cardAgents = useMemo(
+    () => monitors.filter((m) => m.type === 'agent').sort(sortByStatus),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [monitors],
+  );
+  const cardAgentsOnline = cardAgents.filter((m) => m.status === 'up').length;
 
   // Problem monitors (shown in dedicated sections above the column layout)
   const downMonitors = monitors
@@ -246,32 +271,62 @@ export function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-text-primary">{t('dashboard.title')}</h1>
-        {showCreate && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setSelectionMode(!selectionMode);
-                setSelectedIds(new Set());
-                setSelectionKind(null);
-              }}
+        <div className="flex items-center gap-2">
+          {/* Layout toggle */}
+          <div className="flex items-center rounded-lg border border-border overflow-hidden">
+            <button
+              onClick={() => setDashboardLayout('list')}
+              title={t('dashboard.layoutList')}
+              className={cn(
+                'p-1.5 transition-colors',
+                dashboardLayout === 'list'
+                  ? 'bg-bg-tertiary text-text-primary'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover',
+              )}
             >
-              <CheckSquare size={16} className="mr-1.5" />
-              {selectionMode ? t('dashboard.cancelSelection') : t('dashboard.select')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={openAddAgentModal}>
-              <Plus size={16} className="mr-1.5" />
-              {t('dashboard.addAgent')}
-            </Button>
-            <Link to="/monitor/new">
-              <Button variant="secondary" size="sm">
-                <Plus size={16} className="mr-1.5" />
-                {t('dashboard.addMonitor')}
-              </Button>
-            </Link>
+              <LayoutList size={15} />
+            </button>
+            <button
+              onClick={() => setDashboardLayout('cards')}
+              title={t('dashboard.layoutCards')}
+              className={cn(
+                'p-1.5 transition-colors',
+                dashboardLayout === 'cards'
+                  ? 'bg-bg-tertiary text-text-primary'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover',
+              )}
+            >
+              <LayoutGrid size={15} />
+            </button>
           </div>
-        )}
+
+          {showCreate && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectionMode(!selectionMode);
+                  setSelectedIds(new Set());
+                  setSelectionKind(null);
+                }}
+              >
+                <CheckSquare size={16} className="mr-1.5" />
+                {selectionMode ? t('dashboard.cancelSelection') : t('dashboard.select')}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={openAddAgentModal}>
+                <Plus size={16} className="mr-1.5" />
+                {t('dashboard.addAgent')}
+              </Button>
+              <Link to="/monitor/new">
+                <Button variant="secondary" size="sm">
+                  <Plus size={16} className="mr-1.5" />
+                  {t('dashboard.addMonitor')}
+                </Button>
+              </Link>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Stats Overview */}
@@ -418,21 +473,62 @@ export function DashboardPage() {
         </DashboardSection>
       )}
 
-      {/* ── Two-column layout for groups ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+      {dashboardLayout === 'cards' ? (
+        /* ── Cards layout ── */
         <div>
-          {leftBlocks.map(renderBlock)}
-        </div>
-        <div>
-          {rightBlocks.map(renderBlock)}
-        </div>
-      </div>
+          {/* Monitors carousel */}
+          {cardMonitors.length > 0 && (
+            <HorizontalCarousel
+              title={t('dashboard.sectionMonitors')}
+              icon={<Activity size={14} className="text-accent" />}
+              count={`${cardMonitors.length}`}
+            >
+              {cardMonitors.map((m) => (
+                <MonitorCardTile
+                  key={m.id}
+                  monitor={m}
+                  heartbeats={getRecentHeartbeats(m.id)}
+                />
+              ))}
+            </HorizontalCarousel>
+          )}
 
-      {/* Empty state */}
-      {monitors.length === 0 && (
-        <div className="py-12 text-center">
-          <p className="text-text-muted">{t('dashboard.noMonitors')}</p>
+          {/* Agents carousel */}
+          {cardAgents.length > 0 && (
+            <HorizontalCarousel
+              title={t('dashboard.sectionAgents')}
+              icon={<Server size={14} className="text-accent" />}
+              count={`${cardAgentsOnline} online · ${cardAgents.length} total`}
+            >
+              {cardAgents.map((m) => (
+                <AgentCardTile
+                  key={m.id}
+                  monitor={m}
+                  heartbeats={getRecentHeartbeats(m.id)}
+                />
+              ))}
+            </HorizontalCarousel>
+          )}
+
+          {monitors.length === 0 && (
+            <div className="py-12 text-center">
+              <p className="text-text-muted">{t('dashboard.noMonitors')}</p>
+            </div>
+          )}
         </div>
+      ) : (
+        /* ── List layout (original two-column) ── */
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+            <div>{leftBlocks.map(renderBlock)}</div>
+            <div>{rightBlocks.map(renderBlock)}</div>
+          </div>
+          {monitors.length === 0 && (
+            <div className="py-12 text-center">
+              <p className="text-text-muted">{t('dashboard.noMonitors')}</p>
+            </div>
+          )}
+        </>
       )}
 
       {/* Bulk edit modal */}
