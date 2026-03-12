@@ -61,6 +61,7 @@ export function MonitorCard({
 
   return (
     <div
+      data-status={monitor.status}
       className={cn(
         'group flex items-center gap-3 rounded-lg border border-border p-3 transition-colors',
         'hover:bg-bg-hover hover:border-border-light',

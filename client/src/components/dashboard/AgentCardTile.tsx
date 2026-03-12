@@ -38,14 +38,14 @@ function MetricBar({ label, value, unit = '%', color }: {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[11px] text-text-muted w-10 shrink-0">{label}</span>
-      <div className="flex-1 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
+      <span className="text-xs text-text-muted w-10 shrink-0">{label}</span>
+      <div className="flex-1 h-2 rounded-full bg-bg-tertiary overflow-hidden">
         <div
           className={cn('h-full rounded-full transition-all', color)}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={cn('text-[11px] font-mono w-10 text-right shrink-0', valueColor)}>
+      <span className={cn('text-xs font-mono w-10 text-right shrink-0', valueColor)}>
         {value !== undefined ? `${value.toFixed(0)}${unit}` : '—'}
       </span>
     </div>
@@ -92,10 +92,10 @@ export function AgentCardTile({ monitor, heartbeats }: AgentCardTileProps) {
   return (
     <Link
       to={linkTo}
-      style={{ scrollSnapAlign: 'start', minWidth: '210px', maxWidth: '210px' }}
+      data-status={monitor.status}
       className={cn(
-        'flex flex-col rounded-lg border border-border bg-bg-secondary p-3 gap-3',
-        'hover:bg-bg-hover hover:border-border-light transition-colors shrink-0',
+        'flex flex-col rounded-lg border border-border bg-bg-secondary p-3.5 gap-3',
+        'hover:bg-bg-hover hover:border-border-light transition-colors',
       )}
     >
       {/* Header: name + status */}

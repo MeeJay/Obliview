@@ -14,7 +14,7 @@ import { BulkEditModal } from '@/components/monitors/BulkEditModal';
 import { estimateMaxBars } from '@/components/monitors/HeartbeatBar';
 import { Button } from '@/components/common/Button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { HorizontalCarousel } from '@/components/dashboard/HorizontalCarousel';
+import { PeekedGrid } from '@/components/dashboard/PeekedGrid';
 import { MonitorCardTile } from '@/components/dashboard/MonitorCardTile';
 import { AgentCardTile } from '@/components/dashboard/AgentCardTile';
 import { cn } from '@/utils/cn';
@@ -401,8 +401,8 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* ── Down monitors (full width, above columns) ── */}
-      {downMonitors.length > 0 && (
+      {/* ── Down monitors (full width, above columns) — list mode only ── */}
+      {dashboardLayout !== 'cards' && downMonitors.length > 0 && (
         <DashboardSection
           icon={<AlertTriangle size={16} className="text-status-down" />}
           title={t('dashboard.sectionDown')}
@@ -425,8 +425,8 @@ export function DashboardPage() {
         </DashboardSection>
       )}
 
-      {/* ── Alert monitors — agent threshold violations (full width, above columns) ── */}
-      {alertMonitors.length > 0 && (
+      {/* ── Alert monitors — agent threshold violations — list mode only ── */}
+      {dashboardLayout !== 'cards' && alertMonitors.length > 0 && (
         <DashboardSection
           icon={<Bell size={16} className="text-orange-500" />}
           title={t('dashboard.sectionAlert')}
@@ -449,8 +449,8 @@ export function DashboardPage() {
         </DashboardSection>
       )}
 
-      {/* ── SSL Expired monitors (full width, above columns) ── */}
-      {sslExpiredMonitors.length > 0 && (
+      {/* ── SSL Expired monitors — list mode only ── */}
+      {dashboardLayout !== 'cards' && sslExpiredMonitors.length > 0 && (
         <DashboardSection
           icon={<ShieldOff size={16} className="text-status-ssl-expired" />}
           title={t('dashboard.sectionSslExpired')}
@@ -476,12 +476,14 @@ export function DashboardPage() {
       {dashboardLayout === 'cards' ? (
         /* ── Cards layout ── */
         <div>
-          {/* Monitors carousel */}
+          {/* Monitors grid */}
           {cardMonitors.length > 0 && (
-            <HorizontalCarousel
+            <PeekedGrid
               title={t('dashboard.sectionMonitors')}
               icon={<Activity size={14} className="text-accent" />}
               count={`${cardMonitors.length}`}
+              cardWidth={290}
+              rows={cardMonitors.length > 4 ? 2 : 1}
             >
               {cardMonitors.map((m) => (
                 <MonitorCardTile
@@ -490,15 +492,17 @@ export function DashboardPage() {
                   heartbeats={getRecentHeartbeats(m.id)}
                 />
               ))}
-            </HorizontalCarousel>
+            </PeekedGrid>
           )}
 
-          {/* Agents carousel */}
+          {/* Agents grid */}
           {cardAgents.length > 0 && (
-            <HorizontalCarousel
+            <PeekedGrid
               title={t('dashboard.sectionAgents')}
               icon={<Server size={14} className="text-accent" />}
               count={`${cardAgentsOnline} online · ${cardAgents.length} total`}
+              cardWidth={450}
+              rows={cardAgents.length > 3 ? 2 : 1}
             >
               {cardAgents.map((m) => (
                 <AgentCardTile
@@ -507,7 +511,7 @@ export function DashboardPage() {
                   heartbeats={getRecentHeartbeats(m.id)}
                 />
               ))}
-            </HorizontalCarousel>
+            </PeekedGrid>
           )}
 
           {monitors.length === 0 && (

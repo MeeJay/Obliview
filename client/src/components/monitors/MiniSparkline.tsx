@@ -31,6 +31,19 @@ export function MiniSparkline({ heartbeats, monitor, width: fixedWidth, height =
 
   const isValueWatcher = monitor?.type === 'value_watcher';
 
+  // Status-aware sparkline color: blue=up/default, red=down, orange=alert, amber=pending/warning
+  function getSparklineColor(status: string | undefined): string {
+    if (isValueWatcher) return '#f0b429';
+    switch (status) {
+      case 'down':        return '#ff3860';
+      case 'alert':       return '#ff7830';
+      case 'pending':     return '#d29922';
+      case 'ssl_warning': return '#d29922';
+      case 'ssl_expired': return '#a855f7';
+      default:            return '#58a6ff';
+    }
+  }
+
   // How many data points to show — scale with width (roughly 1 point per 4px)
   const maxPoints = Math.max(Math.floor(width / 4), 5);
 
@@ -67,7 +80,7 @@ export function MiniSparkline({ heartbeats, monitor, width: fixedWidth, height =
   });
 
   const pathD = `M${pathPoints.join(' L')}`;
-  const strokeColor = isValueWatcher ? '#f0b429' : '#58a6ff';
+  const strokeColor = getSparklineColor(monitor?.status);
 
   if (fixedWidth !== undefined) {
     return (

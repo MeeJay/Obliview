@@ -56,18 +56,18 @@ export function MonitorCardTile({ monitor, heartbeats }: MonitorCardTileProps) {
   return (
     <Link
       to={`/monitor/${monitor.id}`}
-      style={{ scrollSnapAlign: 'start', minWidth: '210px', maxWidth: '210px' }}
+      data-status={monitor.status}
       className={cn(
-        'flex flex-col rounded-lg border border-border border-l-2 bg-bg-secondary p-3 gap-2',
-        'hover:bg-bg-hover hover:border-border-light transition-colors shrink-0',
+        'flex flex-col rounded-lg border border-border border-l-2 bg-bg-secondary p-3.5 gap-2.5',
+        'hover:bg-bg-hover hover:border-border-light transition-colors',
         statusBorderClass(monitor.status),
       )}
     >
-      {/* Top: status + name + type badge */}
+      {/* Top: status + name */}
       <div className="flex items-start gap-2 min-w-0">
         <MonitorStatusBadge status={monitor.status} size="sm" inMaintenance={monitor.inMaintenance} />
         <div className="flex-1 min-w-0">
-          <div className="truncate text-sm font-medium text-text-primary leading-tight">
+          <div className="truncate text-sm font-semibold text-text-primary leading-tight">
             {monitor.name}
           </div>
           {host && (
@@ -79,13 +79,13 @@ export function MonitorCardTile({ monitor, heartbeats }: MonitorCardTileProps) {
         </span>
       </div>
 
-      {/* Sparkline */}
+      {/* Sparkline — taller for bigger cards */}
       <div className="w-full">
-        <MiniSparkline heartbeats={heartbeats} monitor={monitor} height={36} />
+        <MiniSparkline heartbeats={heartbeats} monitor={monitor} height={46} />
       </div>
 
       {/* Bottom: response time | uptime */}
-      <div className="flex items-center justify-between text-xs mt-auto">
+      <div className="flex items-center justify-between text-xs mt-auto pt-0.5">
         {isValueWatcher ? (
           watchedValue != null ? (
             <span className="font-mono font-semibold text-accent">
@@ -94,7 +94,7 @@ export function MonitorCardTile({ monitor, heartbeats }: MonitorCardTileProps) {
           ) : <span className="text-text-muted">—</span>
         ) : (
           responseTime !== undefined && responseTime !== null ? (
-            <span className="font-mono text-text-secondary">{responseTime}ms</span>
+            <span className="font-mono text-text-secondary">{responseTime} ms</span>
           ) : <span className="text-text-muted">—</span>
         )}
         {uptime !== null ? (
