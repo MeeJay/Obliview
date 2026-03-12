@@ -56,13 +56,11 @@ export function SettingsPage() {
 
   // ── Agent Global Config ──
   const [agentGlobal, setAgentGlobal] = useState<AgentGlobalConfig | null>(null);
-  const [agentSaving, setAgentSaving] = useState(false);
   const [agentInterval, setAgentInterval] = useState('');
   const [agentMaxMissed, setAgentMaxMissed] = useState('');
 
   // ── Obliguard Integration ──
   const [obliguardForm, setObliguardForm] = useState<ObliguardConfig>({ url: '', apiKey: '' });
-  const [obliguardSaving, setObliguardSaving] = useState(false);
   const [showObliguardKey, setShowObliguardKey] = useState(false);
 
   useEffect(() => {
@@ -79,16 +77,12 @@ export function SettingsPage() {
     }).catch(() => {});
   }, [admin]);
 
-  async function handleObliguardSubmit(e: FormEvent) {
-    e.preventDefault();
-    setObliguardSaving(true);
+  async function handleObliguardSubmit() {
     try {
       await appConfigApi.setObliguardConfig(obliguardForm);
       toast.success('Obliguard integration saved');
     } catch {
       toast.error('Failed to save Obliguard integration');
-    } finally {
-      setObliguardSaving(false);
     }
   }
 
@@ -189,7 +183,6 @@ export function SettingsPage() {
 
   async function saveAgentMainConfig() {
     if (!agentGlobal) return;
-    setAgentSaving(true);
     try {
       const updated = await appConfigApi.patchAgentGlobal({
         checkIntervalSeconds: agentInterval.trim() ? Number(agentInterval) : null,
@@ -200,8 +193,6 @@ export function SettingsPage() {
       toast.success(t('common.saved'));
     } catch {
       toast.error(t('settings.failedUpdate'));
-    } finally {
-      setAgentSaving(false);
     }
   }
 
@@ -240,6 +231,7 @@ export function SettingsPage() {
                   <input
                     type="number" value={agentInterval} min={5} max={86400}
                     onChange={e => setAgentInterval(e.target.value)}
+                    onBlur={() => void saveAgentMainConfig()}
                     placeholder={String(DEFAULT_AGENT_GLOBAL_CONFIG.checkIntervalSeconds)}
                     className="w-24 rounded-lg border border-border bg-bg-tertiary px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent text-right placeholder:text-text-muted"
                   />
@@ -284,20 +276,11 @@ export function SettingsPage() {
                   <input
                     type="number" value={agentMaxMissed} min={1} max={20}
                     onChange={e => setAgentMaxMissed(e.target.value)}
+                    onBlur={() => void saveAgentMainConfig()}
                     placeholder={String(DEFAULT_AGENT_GLOBAL_CONFIG.maxMissedPushes)}
                     className="w-20 rounded-lg border border-border bg-bg-tertiary px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-accent text-right placeholder:text-text-muted"
                   />
                 </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={saveAgentMainConfig}
-                  disabled={agentSaving || !agentGlobal}
-                  className="px-4 py-2 text-sm rounded-lg bg-accent text-white hover:bg-accent/90 disabled:opacity-60 transition-colors"
-                >
-                  {agentSaving ? t('common.saving') : t('common.save')}
-                </button>
               </div>
             </div>
 
@@ -391,73 +374,68 @@ export function SettingsPage() {
                 Link Obliview to an Obliguard instance so agents can be cross-referenced between the two apps.
                 Both apps share the same secret key — generate it here, then paste it into Obliguard's settings.
               </p>
-              <form onSubmit={handleObliguardSubmit} className="space-y-3">
-                <Input
-                  label="Obliguard URL"
+
+              {/* URL */}
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Obliguard URL</label>
+                <input
                   type="url"
                   placeholder="https://obliguard.example.com"
                   value={obliguardForm.url}
                   onChange={(e) => setObliguardForm((f) => ({ ...f, url: e.target.value }))}
+                  onBlur={() => void handleObliguardSubmit()}
+                  className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
+              </div>
 
-                {/* Secret — with Generate + Show/Hide + Copy */}
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    Secret
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={showObliguardKey ? 'text' : 'password'}
-                        placeholder="Generate or paste a secret"
-                        value={obliguardForm.apiKey}
-                        onChange={(e) => setObliguardForm((f) => ({ ...f, apiKey: e.target.value }))}
-                        className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowObliguardKey((v) => !v)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-                      >
-                        {showObliguardKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                    {/* Generate */}
+              {/* Secret */}
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Secret</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showObliguardKey ? 'text' : 'password'}
+                      placeholder="Generate or paste a secret"
+                      value={obliguardForm.apiKey}
+                      onChange={(e) => setObliguardForm((f) => ({ ...f, apiKey: e.target.value }))}
+                      onBlur={() => { if (obliguardForm.apiKey.trim()) void handleObliguardSubmit(); }}
+                      className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    />
                     <button
                       type="button"
-                      onClick={() => setObliguardForm((f) => ({ ...f, apiKey: crypto.randomUUID() }))}
-                      title="Generate a new random key"
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+                      onClick={() => setShowObliguardKey((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
                     >
-                      <RefreshCw size={13} />
-                      Generate
+                      {showObliguardKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
-                    {/* Copy */}
-                    {obliguardForm.apiKey && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(obliguardForm.apiKey);
-                          toast.success('API key copied');
-                        }}
-                        title="Copy to clipboard"
-                        className="p-2 rounded-lg border border-border text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
-                      >
-                        <Copy size={14} />
-                      </button>
-                    )}
                   </div>
-                  <p className="mt-1.5 text-xs text-text-muted">
-                    Use the same secret in Obliguard → Settings → Obliview Integration.
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setObliguardForm((f) => ({ ...f, apiKey: crypto.randomUUID() }))}
+                    title="Generate a new random key"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-bg-primary text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+                  >
+                    <RefreshCw size={13} />
+                    Generate
+                  </button>
+                  {obliguardForm.apiKey && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(obliguardForm.apiKey);
+                        toast.success('API key copied');
+                      }}
+                      title="Copy to clipboard"
+                      className="p-2 rounded-lg border border-border bg-bg-primary text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  )}
                 </div>
-
-                <div className="flex justify-end pt-1">
-                  <Button type="submit" disabled={obliguardSaving}>
-                    {obliguardSaving ? 'Saving…' : 'Save'}
-                  </Button>
-                </div>
-              </form>
+                <p className="mt-1.5 text-xs text-text-muted">
+                  Use the same secret in Obliguard → Settings → Obliview Integration.
+                </p>
+              </div>
 
               {/* ── Enable foreign SSO ── */}
               <div className="border-t border-border mt-2 pt-4 flex items-start justify-between gap-4">

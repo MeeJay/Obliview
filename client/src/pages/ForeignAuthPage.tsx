@@ -18,7 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 
-type Stage = 'loading' | 'set-password' | 'error';
+type Stage = 'loading' | 'link-required' | 'set-password' | 'error';
 
 export function ForeignAuthPage() {
   const [searchParams] = useSearchParams();
@@ -30,13 +30,18 @@ export function ForeignAuthPage() {
   const redirect = searchParams.get('redirect') ?? '/';
   const source   = searchParams.get('source') ?? '';   // e.g. 'obliguard'
 
-  const [stage, setStage]         = useState<Stage>('loading');
-  const [errorMsg, setErrorMsg]   = useState('');
-  const [password, setPassword]   = useState('');
-  const [confirm, setConfirm]     = useState('');
-  const [pwError, setPwError]     = useState('');
-  const [showPw, setShowPw]       = useState(false);
-  const [saving, setSaving]       = useState(false);
+  const [stage, setStage]               = useState<Stage>('loading');
+  const [errorMsg, setErrorMsg]         = useState('');
+  const [password, setPassword]         = useState('');
+  const [confirm, setConfirm]           = useState('');
+  const [pwError, setPwError]           = useState('');
+  const [showPw, setShowPw]             = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [linkToken, setLinkToken]       = useState('');
+  const [linkUsername, setLinkUsername] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkError, setLinkError]       = useState('');
+  const [linking, setLinking]           = useState(false);
 
   // Derive a friendly source name: use the `source` param if provided, else hostname
   const sourceName = source
@@ -52,8 +57,12 @@ export function ForeignAuthPage() {
     }
 
     ssoApi.exchange(token, from)
-      .then(({ isFirstLogin }) => {
-        if (isFirstLogin) {
+      .then((data) => {
+        if ('needsLinking' in data) {
+          setLinkToken(data.linkToken);
+          setLinkUsername(data.conflictingUsername);
+          setStage('link-required');
+        } else if (data.isFirstLogin) {
           setStage('set-password');
         } else {
           void finalize();
@@ -93,6 +102,22 @@ export function ForeignAuthPage() {
     void finalize();
   }
 
+  // ── Link existing account handler ─────────────────────────────────────────
+  async function handleLink() {
+    setLinkError('');
+    if (!linkPassword) { setLinkError('Password is required'); return; }
+    setLinking(true);
+    try {
+      await ssoApi.completeLink(linkToken, linkPassword);
+      void finalize();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Linking failed';
+      setLinkError(msg);
+    } finally {
+      setLinking(false);
+    }
+  }
+
   // ── Loading ───────────────────────────────────────────────────────────────
   if (stage === 'loading') {
     return (
@@ -100,6 +125,52 @@ export function ForeignAuthPage() {
         <div className="flex flex-col items-center gap-4 text-text-muted">
           <Loader2 size={36} className="animate-spin text-[#6366f1]" />
           <p className="text-sm">Signing you in via {sourceName}…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Link required (username collision with existing local account) ────────
+  if (stage === 'link-required') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
+        <div className="w-full max-w-sm rounded-xl border border-border bg-bg-secondary p-8 space-y-5">
+          <div className="text-center space-y-2">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[#1e1b4b]/60 border border-[#4338ca]/60">
+              <ArrowLeftRight size={22} className="text-[#a5b4fc]" />
+            </div>
+            <h1 className="text-lg font-semibold text-text-primary">Link your accounts</h1>
+            <p className="text-sm text-text-muted">
+              An account <span className="font-medium text-text-secondary">{linkUsername}</span> already
+              exists on Obliview. Enter your Obliview password to link it to your {sourceName} identity.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <div className="relative">
+              <Input
+                label={`Obliview password for "${linkUsername}"`}
+                type={showPw ? 'text' : 'password'}
+                value={linkPassword}
+                onChange={(e) => setLinkPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleLink(); }}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                className="absolute right-3 top-8 text-text-muted hover:text-text-primary"
+              >
+                {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            {linkError && <p className="text-xs text-status-down">{linkError}</p>}
+          </div>
+          <Button className="w-full" onClick={handleLink} disabled={linking || !linkPassword}>
+            {linking ? 'Linking…' : 'Link accounts'}
+          </Button>
+          <Button variant="secondary" className="w-full" onClick={() => navigate('/login', { replace: true })}>
+            Cancel
+          </Button>
         </div>
       </div>
     );

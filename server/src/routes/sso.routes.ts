@@ -18,8 +18,8 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { appConfigService } from '../services/appConfig.service';
-import { authService } from '../services/auth.service';
-import { hashPassword } from '../utils/crypto';
+import { authService, AccountLinkRequiredError } from '../services/auth.service';
+import { hashPassword, comparePassword } from '../utils/crypto';
 import { tenantService } from '../services/tenant.service';
 import { AppError } from '../middleware/errorHandler';
 import { db } from '../db';
@@ -104,15 +104,15 @@ router.get('/validate-token', async (req: Request, res: Response, next: NextFunc
     const { token } = req.query as { token?: string };
     if (!token) { res.status(400).json({ success: false, error: 'token is required' }); return; }
 
-    const row = await db('sso_tokens')
+    // Atomically mark the token as used in a single UPDATE — prevents race conditions
+    // where two concurrent requests both read used=false before either writes used=true.
+    const [row] = await db('sso_tokens')
       .where({ token, used: false })
       .where('expires_at', '>', new Date())
-      .first() as { id: number; user_id: number } | undefined;
+      .update({ used: true })
+      .returning(['id', 'user_id']) as { id: number; user_id: number }[];
 
     if (!row) { res.status(404).json({ success: false, error: 'Token not found or expired' }); return; }
-
-    // Mark as used (one-time)
-    await db('sso_tokens').where({ id: row.id }).update({ used: true });
 
     const user = await authService.getUserById(row.user_id);
     if (!user || !user.isActive) { res.status(404).json({ success: false, error: 'User not found' }); return; }
@@ -214,23 +214,104 @@ router.post('/exchange', async (req: Request, res: Response, next: NextFunction)
     const { id: foreignId, username, email, role: _role } = body.data.user;
 
     // Find or create the local foreign user
-    const { user, isFirstLogin } = await authService.findOrCreateForeignUser(
-      'obliguard',
-      foreignId,
-      base,
-      { username, email },
-    );
+    let user: Awaited<ReturnType<typeof authService.getUserById>>;
+    let isFirstLogin: boolean;
+    try {
+      const result = await authService.findOrCreateForeignUser(
+        'obliguard',
+        foreignId,
+        base,
+        { username, email },
+      );
+      user = result.user;
+      isFirstLogin = result.isFirstLogin;
+    } catch (findErr) {
+      if (findErr instanceof AccountLinkRequiredError) {
+        // Username belongs to an existing local account — issue a link token.
+        const linkToken = crypto.randomBytes(32).toString('hex');
+        await db('sso_link_tokens').insert({
+          link_token: linkToken,
+          foreign_source: 'obliguard',
+          foreign_id: foreignId,
+          foreign_source_url: base,
+          foreign_username: username,
+          foreign_display_name: body.data.user.displayName ?? null,
+          foreign_role: _role,
+          foreign_email: email ?? null,
+          conflicting_username: findErr.conflictingUsername,
+          expires_at: new Date(Date.now() + 5 * 60_000),
+        });
+        res.json({ success: true, data: { needsLinking: true, linkToken, conflictingUsername: findErr.conflictingUsername } });
+        return;
+      }
+      throw findErr;
+    }
 
     // Establish session
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    req.session.role = user.role;
+    req.session.userId = user!.id;
+    req.session.username = user!.username;
+    req.session.role = user!.role;
 
     // Resolve tenant
-    const tenant = await tenantService.getFirstTenantForUser(user.id);
+    const tenant = await tenantService.getFirstTenantForUser(user!.id);
     req.session.currentTenantId = tenant?.id ?? 1;
 
     res.json({ success: true, data: { user, isFirstLogin } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/sso/complete-link  { linkToken: string, password: string }
+// Completes the account-linking flow: verifies local password, links the foreign
+// identity to the existing local account, and establishes a session.
+// No session auth — this IS the authentication step.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/complete-link', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { linkToken, password } = req.body as { linkToken?: string; password?: string };
+    if (!linkToken || !password) throw new AppError(400, 'linkToken and password are required');
+
+    // Validate the link token (not expired)
+    const linkRow = await db('sso_link_tokens')
+      .where({ link_token: linkToken })
+      .where('expires_at', '>', new Date())
+      .first() as {
+        foreign_source: string; foreign_id: number; foreign_source_url: string;
+        conflicting_username: string;
+      } | undefined;
+    if (!linkRow) throw new AppError(401, 'Link token expired or invalid');
+
+    // Verify the local account password
+    const localUser = await db('users')
+      .where({ username: linkRow.conflicting_username, is_active: true })
+      .first() as { id: number; username: string; role: string; password_hash: string | null } | undefined;
+    if (!localUser || !localUser.password_hash) throw new AppError(404, 'Local account not found');
+
+    const valid = await comparePassword(password, localUser.password_hash);
+    if (!valid) throw new AppError(401, 'Incorrect password');
+
+    // Link the foreign identity to the local account
+    await db('users').where({ id: localUser.id }).update({
+      foreign_source: linkRow.foreign_source,
+      foreign_id: linkRow.foreign_id,
+      foreign_source_url: linkRow.foreign_source_url,
+      updated_at: new Date(),
+    });
+
+    // Consume the link token
+    await db('sso_link_tokens').where({ link_token: linkToken }).delete();
+
+    // Establish session
+    req.session.userId = localUser.id;
+    req.session.username = localUser.username;
+    req.session.role = localUser.role;
+    const tenant = await tenantService.getFirstTenantForUser(localUser.id);
+    req.session.currentTenantId = tenant?.id ?? 1;
+
+    const user = await authService.getUserById(localUser.id);
+    res.json({ success: true, data: { user, isFirstLogin: false } });
   } catch (err) {
     next(err);
   }

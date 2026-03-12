@@ -16,10 +16,27 @@ export const ssoApi = {
    * Called by ForeignAuthPage after arriving from Obliguard.
    * Creates a local session and returns the user.
    */
-  async exchange(token: string, from: string): Promise<{ user: User; isFirstLogin: boolean }> {
+  async exchange(
+    token: string,
+    from: string,
+  ): Promise<
+    | { user: User; isFirstLogin: boolean }
+    | { needsLinking: true; linkToken: string; conflictingUsername: string }
+  > {
+    const res = await apiClient.post<ApiResponse<
+      | { user: User; isFirstLogin: boolean }
+      | { needsLinking: true; linkToken: string; conflictingUsername: string }
+    >>('/sso/exchange', { token, from });
+    return res.data.data!;
+  },
+
+  /**
+   * Complete the account-linking flow after verifying local password.
+   */
+  async completeLink(linkToken: string, password: string): Promise<{ user: User; isFirstLogin: boolean }> {
     const res = await apiClient.post<ApiResponse<{ user: User; isFirstLogin: boolean }>>(
-      '/sso/exchange',
-      { token, from },
+      '/sso/complete-link',
+      { linkToken, password },
     );
     return res.data.data!;
   },

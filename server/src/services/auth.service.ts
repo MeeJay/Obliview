@@ -1,5 +1,12 @@
 import { db } from '../db';
 import { hashPassword, comparePassword } from '../utils/crypto';
+
+/** Thrown by findOrCreateForeignUser when the incoming username matches an existing local account. */
+export class AccountLinkRequiredError extends Error {
+  constructor(public readonly conflictingUsername: string) {
+    super('account_link_required');
+  }
+}
 import type { User, UserPreferences } from '@obliview/shared';
 import { logger } from '../utils/logger';
 
@@ -114,17 +121,18 @@ export const authService = {
       return { user: rowToUser(updated), isFirstLogin: false };
     }
 
-    // Resolve username collision
-    let username = info.username;
-    const collision = await db('users').where({ username }).first();
-    if (collision) {
-      username = `${username}_${foreignSource}`;
-    }
+    // If the username belongs to an existing LOCAL account, require password linking instead of
+    // silently creating a suffixed duplicate. Throws AccountLinkRequiredError to the caller.
+    const localCollision = await db('users')
+      .where({ username: info.username })
+      .whereNull('foreign_source')
+      .first();
+    if (localCollision) throw new AccountLinkRequiredError(info.username);
 
     // Create new foreign user (no password, enrollment pending)
     const [row] = await db<UserRow>('users')
       .insert({
-        username,
+        username: info.username,
         password_hash: null,
         display_name: info.username,
         role: 'user',
