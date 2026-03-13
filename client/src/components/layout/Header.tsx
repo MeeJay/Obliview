@@ -1,10 +1,11 @@
 import { LogOut, Menu, Download, ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
 import { useSocketStore } from '@/store/socketStore';
+import { useMonitorStore } from '@/store/monitorStore';
 import { appConfigApi } from '@/api/appConfig.api';
 import { ssoApi } from '@/api/sso.api';
 import { Button } from '@/components/common/Button';
@@ -21,6 +22,7 @@ export function Header() {
   const { user, logout } = useAuthStore();
   const { toggleSidebar, sidebarFloating } = useUiStore();
   const { status: socketStatus } = useSocketStore();
+  const monitors = useMonitorStore((s) => s.monitors);
   const [obliguardUrl, setObliguardUrl] = useState<string | null>(null);
   const [, startSsoTransition] = useTransition();
 
@@ -29,6 +31,17 @@ export function Header() {
       .then((cfg) => setObliguardUrl(cfg.obliguard_url ?? null))
       .catch(() => {});
   }, []);
+
+  // Monitor status counts for header chips
+  const statusCounts = useMemo(() => {
+    let up = 0, down = 0, warn = 0;
+    for (const m of monitors.values()) {
+      if (m.status === 'up')    up++;
+      else if (m.status === 'down')  down++;
+      else if (m.status === 'alert') warn++;
+    }
+    return { up, down, warn };
+  }, [monitors]);
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-bg-secondary px-4">
@@ -82,7 +95,45 @@ export function Header() {
         )}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {/* Monitor status chips */}
+        {monitors.size > 0 && (
+          <div className="hidden sm:flex items-center gap-1.5">
+            <Link
+              to="/"
+              title={t('dashboard.statsUp')}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold
+                text-green-400 bg-green-500/10 border border-green-500/25
+                hover:bg-green-500/20 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              {statusCounts.up}
+            </Link>
+            <Link
+              to="/"
+              title={t('dashboard.statsDown')}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold
+                text-red-400 bg-red-500/10 border border-red-500/25
+                hover:bg-red-500/20 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              {statusCounts.down}
+            </Link>
+            {statusCounts.warn > 0 && (
+              <Link
+                to="/"
+                title={t('dashboard.statsAlert')}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold
+                  text-orange-400 bg-orange-500/10 border border-orange-500/25
+                  hover:bg-orange-500/20 transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                {statusCounts.warn}
+              </Link>
+            )}
+          </div>
+        )}
+
         {/* Download App link — hidden inside the native desktop app */}
         {!isNativeApp && (
           <Link

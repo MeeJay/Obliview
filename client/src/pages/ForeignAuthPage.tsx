@@ -156,10 +156,16 @@ export function ForeignAuthPage() {
   // ── Loading ───────────────────────────────────────────────────────────────
   if (stage === 'loading') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <div className="flex flex-col items-center gap-4 text-text-muted">
-          <Loader2 size={36} className="animate-spin text-[#6366f1]" />
-          <p className="text-sm">Signing you in via {sourceName}…</p>
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
+        <div className="w-full max-w-sm text-center space-y-6">
+          <div className="flex items-center justify-center gap-2">
+            <ArrowLeftRight size={28} className="text-[#fb923c]" />
+            <span className="text-xl font-semibold text-text-primary">SSO Connection</span>
+          </div>
+          <div className="space-y-3">
+            <Loader2 size={36} className="animate-spin text-[#fb923c] mx-auto" />
+            <p className="text-sm text-text-secondary">Signing you in via {sourceName}…</p>
+          </div>
         </div>
       </div>
     );

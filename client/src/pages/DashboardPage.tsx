@@ -365,7 +365,7 @@ export function DashboardPage() {
             <div className="text-sm text-text-secondary">{t('dashboard.statsSslExpired')}</div>
           </div>
         )}
-        <div className="rounded-lg border border-border bg-bg-secondary p-4" data-status="up">
+        <div className="rounded-lg border border-border bg-bg-secondary p-4" data-status="info">
           <div className="flex items-center gap-1.5 text-2xl font-bold text-accent">
             <Activity size={20} />
             {overallUptime !== null ? `${overallUptime}%` : '-'}

@@ -202,6 +202,10 @@
 [data-theme="neon"] [data-status="maintenance"] {
   border-color: rgb(0 200 255 / 0.5) !important;
 }
+[data-theme="neon"] [data-status="info"] {
+  border-color: rgb(88 166 255 / 0.6) !important;
+  box-shadow: 0 0 8px rgb(88 166 255 / 0.25);
+}
 
 /* ── Left-border status glow on monitor cards (list view) ───────────────────── */
 /* border-l-status-up: no outer glow — the green left border itself is sufficient */
