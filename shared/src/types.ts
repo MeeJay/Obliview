@@ -424,12 +424,30 @@ export interface AppConfig {
   otp_smtp_server_id: number | null;
   /** Obliguard server URL — null when not configured. API key is never exposed via getAll(). */
   obliguard_url: string | null;
+  /** Oblimap server URL — null when not configured. */
+  oblimap_url: string | null;
+  /** Obliance server URL — null when not configured. */
+  obliance_url: string | null;
   /** Whether cross-app SSO (foreign user login) is enabled. */
   enable_foreign_sso: boolean;
+  enable_oblimap_sso: boolean;
+  enable_obliance_sso: boolean;
 }
 
 /** Obliguard integration config — stored as JSON under key "obliguard_config" in app_config. */
 export interface ObliguardConfig {
+  url: string;
+  apiKey: string;
+}
+
+/** Oblimap integration config — stored as JSON under key "oblimap_config" in app_config. */
+export interface OblimapConfig {
+  url: string;
+  apiKey: string;
+}
+
+/** Obliance integration config — stored as JSON under key "obliance_config" in app_config. */
+export interface OblianceConfig {
   url: string;
   apiKey: string;
 }

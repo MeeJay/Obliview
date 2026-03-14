@@ -5,6 +5,7 @@ import { connectSocket, disconnectSocket } from '../socket/socketClient';
 import { useLiveAlertsStore } from './liveAlertsStore';
 import { setLanguage } from '../i18n';
 import { useTenantStore } from './tenantStore';
+import { useGroupStore } from './groupStore';
 import { applyTheme } from '../utils/theme';
 
 function syncPreferencesToStore(user: User) {
@@ -74,6 +75,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (currentTenantId != null) {
             useTenantStore.setState({ currentTenantId });
           }
+          // Reload group collapsed state for this user+tenant context
+          useGroupStore.getState().reinitForTenant(fullUser.id, currentTenantId ?? null);
         })
         .catch(() => { /* non-critical — permissions will load on next checkSession */ });
       return result;
@@ -114,6 +117,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (currentTenantId != null) {
         useTenantStore.setState({ currentTenantId });
       }
+      // Reload group collapsed state for this user+tenant context
+      useGroupStore.getState().reinitForTenant(user.id, currentTenantId ?? null);
     } catch {
       set({ user: null, permissions: null, requires2faSetup: false, isInitialized: true });
     }

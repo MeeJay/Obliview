@@ -18,6 +18,14 @@ router.patch('/agent-global', requireAuth, requireRole('admin'), appConfigContro
 router.get('/obliguard', requireAuth, requireRole('admin'), appConfigController.getObliguardConfig);
 router.put('/obliguard', requireAuth, requireRole('admin'), appConfigController.setObliguardConfig);
 
+// Oblimap integration config — admin only
+router.get('/oblimap', requireAuth, requireRole('admin'), appConfigController.getOblimapConfig);
+router.put('/oblimap', requireAuth, requireRole('admin'), appConfigController.setOblimapConfig);
+
+// Obliance integration config — admin only
+router.get('/obliance', requireAuth, requireRole('admin'), appConfigController.getOblianceConfig);
+router.put('/obliance', requireAuth, requireRole('admin'), appConfigController.setOblianceConfig);
+
 // Generic key setter — must be LAST among PUT routes
 router.put('/:key', requireAuth, requireRole('admin'), appConfigController.set);
 

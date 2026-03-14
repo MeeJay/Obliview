@@ -20,6 +20,8 @@ import twoFactorRoutes from './twoFactor.routes';
 import maintenanceRoutes from './maintenance.routes';
 import { liveAlertRouter } from './liveAlert.routes';
 import obliguardRoutes from './obliguard.routes';
+import oblimapRoutes from './oblimap.routes';
+import oblianceRoutes from './obliance.routes';
 import ssoRoutes from './sso.routes';
 
 const router = Router();
@@ -30,6 +32,8 @@ router.use('/heartbeat', heartbeatRoutes); // push monitors (no session)
 router.use('/agent', agentRoutes);          // agent push (authenticated via API key)
 router.use('/admin/config', appConfigRoutes);
 router.use('/obliguard', obliguardRoutes);   // /link (Bearer auth) + /proxy-link (session auth)
+router.use('/oblimap', oblimapRoutes);       // /link (Bearer auth) + /proxy-link (session auth)
+router.use('/obliance', oblianceRoutes);    // /link (Bearer auth) + /proxy-link (session auth)
 router.use('/sso', ssoRoutes);              // cross-app SSO (generate-token, validate-token, exchange, users)
 router.use('/profile/2fa', twoFactorRoutes); // must be before /profile
 

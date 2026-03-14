@@ -8,7 +8,7 @@ import { appConfigApi } from '@/api/appConfig.api';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
-import type { SmtpServer, AppConfig, AgentGlobalConfig, NotificationTypeConfig, ObliguardConfig } from '@obliview/shared';
+import type { SmtpServer, AppConfig, AgentGlobalConfig, NotificationTypeConfig, ObliguardConfig, OblimapConfig, OblianceConfig } from '@obliview/shared';
 import { DEFAULT_AGENT_GLOBAL_CONFIG } from '@obliview/shared';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/cn';
@@ -63,6 +63,14 @@ export function SettingsPage() {
   const [obliguardForm, setObliguardForm] = useState<ObliguardConfig>({ url: '', apiKey: '' });
   const [showObliguardKey, setShowObliguardKey] = useState(false);
 
+  // ── Oblimap Integration ──
+  const [oblimapForm, setOblimapForm] = useState<OblimapConfig>({ url: '', apiKey: '' });
+  const [showOblimapKey, setShowOblimapKey] = useState(false);
+
+  // ── Obliance Integration ──
+  const [oblianceForm, setOblianceForm] = useState<OblianceConfig>({ url: '', apiKey: '' });
+  const [showOblianceKey, setShowOblianceKey] = useState(false);
+
   useEffect(() => {
     if (!admin) return;
     smtpServerApi.list().then(setServers).catch(() => {});
@@ -75,6 +83,12 @@ export function SettingsPage() {
     appConfigApi.getObliguardConfig().then((cfg) => {
       if (cfg) setObliguardForm(cfg);
     }).catch(() => {});
+    appConfigApi.getOblimapConfig().then((cfg) => {
+      if (cfg) setOblimapForm(cfg);
+    }).catch(() => {});
+    appConfigApi.getOblianceConfig().then((cfg) => {
+      if (cfg) setOblianceForm(cfg);
+    }).catch(() => {});
   }, [admin]);
 
   async function handleObliguardSubmit() {
@@ -83,6 +97,24 @@ export function SettingsPage() {
       toast.success('Obliguard integration saved');
     } catch {
       toast.error('Failed to save Obliguard integration');
+    }
+  }
+
+  async function handleOblimapSubmit() {
+    try {
+      await appConfigApi.setOblimapConfig(oblimapForm);
+      toast.success('Oblimap integration saved');
+    } catch {
+      toast.error('Failed to save Oblimap integration');
+    }
+  }
+
+  async function handleOblianceSubmit() {
+    try {
+      await appConfigApi.setOblianceConfig(oblianceForm);
+      toast.success('Obliance integration saved');
+    } catch {
+      toast.error('Failed to save Obliance integration');
     }
   }
 
@@ -460,6 +492,162 @@ export function SettingsPage() {
                   )}
                 >
                   <span className={cn('pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', appConfig?.enable_foreign_sso ? 'translate-x-4' : 'translate-x-0')} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Oblimap Integration ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <ArrowLeftRight size={16} className="text-text-muted" />
+              <h2 className="text-lg font-semibold text-text-primary">Oblimap Integration</h2>
+            </div>
+            <div className="rounded-lg border border-border bg-bg-secondary p-5 space-y-4">
+              <p className="text-sm text-text-muted">
+                Link Obliview to an Oblimap instance so probe devices can be cross-referenced between the two apps.
+                Both apps share the same secret key — generate it here, then paste it into Oblimap's settings.
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Oblimap URL</label>
+                <input
+                  type="url"
+                  placeholder="https://oblimap.example.com"
+                  value={oblimapForm.url}
+                  onChange={(e) => setOblimapForm((f) => ({ ...f, url: e.target.value }))}
+                  onBlur={() => void handleOblimapSubmit()}
+                  className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Secret</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showOblimapKey ? 'text' : 'password'}
+                      placeholder="Generate or paste a secret"
+                      value={oblimapForm.apiKey}
+                      onChange={(e) => setOblimapForm((f) => ({ ...f, apiKey: e.target.value }))}
+                      onBlur={() => { if (oblimapForm.apiKey.trim()) void handleOblimapSubmit(); }}
+                      className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    />
+                    <button type="button" onClick={() => setShowOblimapKey((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                      {showOblimapKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <button type="button" onClick={() => setOblimapForm((f) => ({ ...f, apiKey: crypto.randomUUID() }))} title="Generate a new random key" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-bg-primary text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0">
+                    <RefreshCw size={13} />
+                    Generate
+                  </button>
+                  {oblimapForm.apiKey && (
+                    <button type="button" onClick={() => { void navigator.clipboard.writeText(oblimapForm.apiKey); toast.success('API key copied'); }} title="Copy to clipboard" className="p-2 rounded-lg border border-border bg-bg-primary text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0">
+                      <Copy size={14} />
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-text-muted">
+                  Use the same secret in Oblimap → Settings → Obliview Integration.
+                </p>
+              </div>
+
+              <div className="border-t border-border mt-2 pt-4 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <ArrowLeftRight size={15} className="text-text-muted mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Enable cross-app SSO</p>
+                    <p className="text-xs text-text-muted mt-0.5">
+                      Allow users to switch seamlessly between Obliview and Oblimap without re-authenticating.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={appConfig?.enable_oblimap_sso ?? false}
+                  disabled={configSaving || !appConfig || !oblimapForm.url}
+                  onClick={() => setConfigKey('enable_oblimap_sso', !appConfig?.enable_oblimap_sso)}
+                  className={cn('relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none disabled:opacity-50', appConfig?.enable_oblimap_sso ? 'bg-primary' : 'bg-bg-tertiary')}
+                >
+                  <span className={cn('pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', appConfig?.enable_oblimap_sso ? 'translate-x-4' : 'translate-x-0')} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Obliance Integration ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <ArrowLeftRight size={16} className="text-text-muted" />
+              <h2 className="text-lg font-semibold text-text-primary">Obliance Integration</h2>
+            </div>
+            <div className="rounded-lg border border-border bg-bg-secondary p-5 space-y-4">
+              <p className="text-sm text-text-muted">
+                Link Obliview to an Obliance instance so devices can be cross-referenced between the two apps.
+                Both apps share the same secret key — generate it here, then paste it into Obliance's settings.
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Obliance URL</label>
+                <input
+                  type="url"
+                  placeholder="https://obliance.example.com"
+                  value={oblianceForm.url}
+                  onChange={(e) => setOblianceForm((f) => ({ ...f, url: e.target.value }))}
+                  onBlur={() => void handleOblianceSubmit()}
+                  className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Secret</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showOblianceKey ? 'text' : 'password'}
+                      placeholder="Generate or paste a secret"
+                      value={oblianceForm.apiKey}
+                      onChange={(e) => setOblianceForm((f) => ({ ...f, apiKey: e.target.value }))}
+                      onBlur={() => { if (oblianceForm.apiKey.trim()) void handleOblianceSubmit(); }}
+                      className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    />
+                    <button type="button" onClick={() => setShowOblianceKey((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+                      {showOblianceKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <button type="button" onClick={() => setOblianceForm((f) => ({ ...f, apiKey: crypto.randomUUID() }))} title="Generate a new random key" className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-bg-primary text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0">
+                    <RefreshCw size={13} />
+                    Generate
+                  </button>
+                  {oblianceForm.apiKey && (
+                    <button type="button" onClick={() => { void navigator.clipboard.writeText(oblianceForm.apiKey); toast.success('API key copied'); }} title="Copy to clipboard" className="p-2 rounded-lg border border-border bg-bg-primary text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0">
+                      <Copy size={14} />
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-text-muted">
+                  Use the same secret in Obliance → Settings → Obliview Integration.
+                </p>
+              </div>
+
+              <div className="border-t border-border mt-2 pt-4 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <ArrowLeftRight size={15} className="text-text-muted mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Enable cross-app SSO</p>
+                    <p className="text-xs text-text-muted mt-0.5">
+                      Allow users to switch seamlessly between Obliview and Obliance without re-authenticating.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={appConfig?.enable_obliance_sso ?? false}
+                  disabled={configSaving || !appConfig || !oblianceForm.url}
+                  onClick={() => setConfigKey('enable_obliance_sso', !appConfig?.enable_obliance_sso)}
+                  className={cn('relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none disabled:opacity-50', appConfig?.enable_obliance_sso ? 'bg-primary' : 'bg-bg-tertiary')}
+                >
+                  <span className={cn('pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', appConfig?.enable_obliance_sso ? 'translate-x-4' : 'translate-x-0')} />
                 </button>
               </div>
             </div>

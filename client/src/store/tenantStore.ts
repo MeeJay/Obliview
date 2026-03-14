@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { TenantWithRole } from '@obliview/shared';
+import { useGroupStore } from './groupStore';
+import { useAuthStore } from './authStore';
 
 interface TenantState {
   currentTenantId: number | null;
@@ -36,6 +38,9 @@ export const useTenantStore = create<TenantState>((set) => ({
       });
       if (!res.ok) return;
       set({ currentTenantId: tenantId });
+      // Reload group collapsed state for the new tenant context
+      const userId = useAuthStore.getState().user?.id ?? null;
+      useGroupStore.getState().reinitForTenant(userId, tenantId);
     } catch {
       // ignore
     }

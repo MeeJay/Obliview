@@ -2,19 +2,33 @@ import { create } from 'zustand';
 import type { MonitorGroup, GroupTreeNode } from '@obliview/shared';
 import { groupsApi } from '../api/groups.api';
 
-// ── localStorage persistence for collapsed groups ──
-const COLLAPSED_STORAGE_KEY = 'ov-group-collapsed';
+// ── localStorage persistence for collapsed groups (per-user per-tenant) ──
+const COLLAPSED_LEGACY_KEY = 'ov-group-collapsed';
 
-function loadCollapsed(): Set<number> {
+/** Returns a storage key scoped to the given user + tenant so each context has its own state. */
+function collapsedKey(userId: number | null, tenantId: number | null): string {
+  if (userId == null) return COLLAPSED_LEGACY_KEY;
+  return `ov-group-collapsed-u${userId}-t${tenantId ?? 0}`;
+}
+
+function loadCollapsedFromKey(key: string): Set<number> {
   try {
-    const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) return new Set(JSON.parse(raw) as number[]);
   } catch { /* ignore */ }
   return new Set();
 }
 
+/** Initial load uses the legacy key so existing data still works before first auth. */
+function loadCollapsed(): Set<number> {
+  return loadCollapsedFromKey(COLLAPSED_LEGACY_KEY);
+}
+
+/** Module-level: tracks which key the store is currently saving to. */
+let _activeCollapsedKey = COLLAPSED_LEGACY_KEY;
+
 function saveCollapsed(ids: Set<number>): void {
-  localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify([...ids]));
+  localStorage.setItem(_activeCollapsedKey, JSON.stringify([...ids]));
 }
 
 /** Walk tree recursively to find all ancestor IDs of a target group. */
@@ -53,6 +67,8 @@ interface GroupStore {
   expandGroup: (groupId: number) => void;
   expandAncestors: (groupId: number) => void;
   isGroupExpanded: (groupId: number) => boolean;
+  /** Re-loads collapsed state for the given user+tenant context (call on login / tenant switch). */
+  reinitForTenant: (userId: number | null, tenantId: number | null) => void;
 
   // Getters
   getGroup: (id: number) => MonitorGroup | undefined;
@@ -126,6 +142,11 @@ export const useGroupStore = create<GroupStore>((set, get) => ({
   },
 
   // ── Collapse/expand ──
+
+  reinitForTenant: (userId, tenantId) => {
+    _activeCollapsedKey = collapsedKey(userId, tenantId);
+    set({ collapsedGroupIds: loadCollapsedFromKey(_activeCollapsedKey) });
+  },
 
   toggleGroupExpanded: (groupId) => {
     const collapsed = new Set(get().collapsedGroupIds);

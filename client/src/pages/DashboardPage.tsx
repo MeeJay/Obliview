@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Plus, CheckSquare, Activity, Clock, AlertTriangle, ShieldOff, Folder, Server, Bell, LayoutList, LayoutGrid } from 'lucide-react';
+import { Plus, CheckSquare, Activity, Clock, AlertTriangle, ShieldOff, Folder, Server, Bell, LayoutList, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Monitor, GroupTreeNode } from '@obliview/shared';
 import { useMonitorStore } from '@/store/monitorStore';
 import { useGroupStore } from '@/store/groupStore';
@@ -70,7 +70,7 @@ export function DashboardPage() {
   const { canCreate } = useAuthStore();
   const { openAddAgentModal, dashboardLayout, setDashboardLayout } = useUiStore();
   const { fetchMonitors, fetchAllHeartbeats, getMonitorList, getMonitorsByGroup, getRecentHeartbeats, isLoading } = useMonitorStore();
-  const { tree, fetchTree } = useGroupStore();
+  const { tree, fetchTree, isGroupExpanded, toggleGroupExpanded } = useGroupStore();
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [selectionKind, setSelectionKind] = useState<'monitor' | 'agent' | null>(null);
@@ -222,11 +222,14 @@ export function DashboardPage() {
 
   const renderBlock = (block: ColumnBlock) => {
     if (block.type === 'ungrouped') {
+      const ungroupedExpanded = isGroupExpanded(0);
       return (
         <DashboardSection
           key="ungrouped"
           title={t('dashboard.sectionUngrouped')}
           borderColor="border-border"
+          collapsed={!ungroupedExpanded}
+          onToggle={() => toggleGroupExpanded(0)}
         >
           {block.monitors.map((m) => (
             <MonitorCard
@@ -567,6 +570,7 @@ function GroupSection({
   selectionKind: 'monitor' | 'agent' | null;
   onSelect: (id: number) => void;
 }) {
+  const { isGroupExpanded, toggleGroupExpanded } = useGroupStore();
   const groupMonitors = getMonitorsByGroup(node.id)
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -577,12 +581,16 @@ function GroupSection({
     ? <Server size={16} className="text-accent" />
     : <Folder size={16} className="text-accent" />;
 
+  const expanded = isGroupExpanded(node.id);
+
   return (
     <DashboardSection
       icon={groupIcon}
       title={node.name}
       depth={depth}
       borderColor="border-accent/20"
+      collapsed={!expanded}
+      onToggle={() => toggleGroupExpanded(node.id)}
     >
       {/* Direct monitors */}
       {groupMonitors.map((m) => (
@@ -615,13 +623,15 @@ function GroupSection({
   );
 }
 
-/** Reusable section wrapper with a title header */
+/** Reusable section wrapper with a collapsible title header */
 function DashboardSection({
   icon,
   title,
   badge,
   borderColor = 'border-border',
   depth = 0,
+  collapsed = false,
+  onToggle,
   children,
 }: {
   icon?: React.ReactNode;
@@ -629,20 +639,35 @@ function DashboardSection({
   badge?: React.ReactNode;
   borderColor?: string;
   depth?: number;
+  collapsed?: boolean;
+  onToggle?: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className={`mb-4 ${depth > 0 ? 'ml-4' : ''}`}>
-      <div className={`flex items-center gap-2 mb-2 pb-1 border-b ${borderColor}`}>
+      <div
+        className={cn(
+          `flex items-center gap-2 mb-2 pb-1 border-b ${borderColor}`,
+          onToggle && 'cursor-pointer select-none',
+        )}
+        onClick={onToggle}
+      >
+        {onToggle && (
+          <span className="text-text-muted shrink-0">
+            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </span>
+        )}
         {icon}
-        <span className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
+        <span className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex-1">
           {title}
         </span>
         {badge}
       </div>
-      <div className="space-y-2">
-        {children}
-      </div>
+      {!collapsed && (
+        <div className="space-y-2">
+          {children}
+        </div>
+      )}
     </div>
   );
 }

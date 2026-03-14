@@ -2309,8 +2309,10 @@ export function AgentDetailPage() {
   // Live operational status pushed by socket (e.g. 'updating')
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
 
-  // Obliguard cross-link
+  // Cross-app links (resolved once per device)
   const [obliguardUrl, setObliguardUrl] = useState<string | null>(null);
+  const [oblimapUrl, setOblimapUrl]     = useState<string | null>(null);
+  const [oblianceUrl, setOblianceUrl]   = useState<string | null>(null);
 
   const openConfigModal = (section: 'cpu' | 'ram' | 'gpu' | 'drives' | 'network' | 'temps') => {
     setConfigModalSection(section);
@@ -2377,13 +2379,15 @@ export function AgentDetailPage() {
     if (device) setDisplayConfig(mergeDisplayConfig(device.displayConfig ?? null));
   }, [device?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Look up this device in Obliguard (if integration is configured)
+  // Look up this device in cross-app platforms (if integrations are configured)
   useEffect(() => {
     if (!device?.uuid) return;
     setObliguardUrl(null);
-    appConfigApi.proxyObliguardLink(device.uuid)
-      .then((url) => setObliguardUrl(url))
-      .catch(() => {});
+    setOblimapUrl(null);
+    setOblianceUrl(null);
+    appConfigApi.proxyObliguardLink(device.uuid).then((url) => setObliguardUrl(url)).catch(() => {});
+    appConfigApi.proxyOblimapLink(device.uuid).then((url) => setOblimapUrl(url)).catch(() => {});
+    appConfigApi.proxyOblianceLink(device.uuid).then((url) => setOblianceUrl(url)).catch(() => {});
   }, [device?.uuid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -2634,22 +2638,15 @@ export function AgentDetailPage() {
               <button
                 type="button"
                 onClick={() => {
-                  // Try SSO switch; fall back to direct link if SSO not enabled
                   ssoApi.generateSwitchToken()
                     .then((token) => {
                       const from = window.location.origin;
                       try {
                         const url = new URL(obliguardUrl);
-                        const redirectPath = url.pathname;
-                        const obliguardBase = url.origin;
-                        window.location.href = `${obliguardBase}/auth/foreign?token=${encodeURIComponent(token)}&from=${encodeURIComponent(from)}&source=obliview&redirect=${encodeURIComponent(redirectPath)}`;
-                      } catch {
-                        window.location.href = obliguardUrl;
-                      }
+                        window.location.href = `${url.origin}/auth/foreign?token=${encodeURIComponent(token)}&from=${encodeURIComponent(from)}&source=obliview&redirect=${encodeURIComponent(url.pathname)}`;
+                      } catch { window.location.href = obliguardUrl; }
                     })
-                    .catch(() => {
-                      window.location.href = obliguardUrl;
-                    });
+                    .catch(() => { window.location.href = obliguardUrl; });
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
                   text-[#fb923c] bg-[#431407]/40 border-[#c2410c]/50
@@ -2657,6 +2654,50 @@ export function AgentDetailPage() {
               >
                 <ArrowLeftRight size={13} />
                 Obliguard
+              </button>
+            )}
+            {oblimapUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  ssoApi.generateSwitchToken()
+                    .then((token) => {
+                      const from = window.location.origin;
+                      try {
+                        const url = new URL(oblimapUrl);
+                        window.location.href = `${url.origin}/auth/foreign?token=${encodeURIComponent(token)}&from=${encodeURIComponent(from)}&source=obliview&redirect=${encodeURIComponent(url.pathname)}`;
+                      } catch { window.location.href = oblimapUrl; }
+                    })
+                    .catch(() => { window.location.href = oblimapUrl; });
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                  text-[#10b981] bg-[#022c22]/40 border-[#047857]/50
+                  hover:text-white hover:bg-[#022c22]/60 hover:border-[#059669]"
+              >
+                <ArrowLeftRight size={13} />
+                Oblimap
+              </button>
+            )}
+            {oblianceUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  ssoApi.generateSwitchToken()
+                    .then((token) => {
+                      const from = window.location.origin;
+                      try {
+                        const url = new URL(oblianceUrl);
+                        window.location.href = `${url.origin}/auth/foreign?token=${encodeURIComponent(token)}&from=${encodeURIComponent(from)}&source=obliview&redirect=${encodeURIComponent(url.pathname)}`;
+                      } catch { window.location.href = oblianceUrl; }
+                    })
+                    .catch(() => { window.location.href = oblianceUrl; });
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                  text-[#a78bfa] bg-[#2e1065]/40 border-[#7c3aed]/50
+                  hover:text-white hover:bg-[#2e1065]/60 hover:border-[#8b5cf6]"
+              >
+                <ArrowLeftRight size={13} />
+                Obliance
               </button>
             )}
             <button onClick={() => void loadData()}

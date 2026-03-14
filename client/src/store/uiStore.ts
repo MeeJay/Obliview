@@ -29,7 +29,7 @@ function loadSavedDashLayout(): DashboardLayout {
     const saved = localStorage.getItem(STORAGE_KEY_DASH_LAYOUT);
     if (saved === 'cards' || saved === 'list') return saved;
   } catch { /* ignore */ }
-  return 'list';
+  return 'cards';
 }
 
 function loadSavedWidth(): number {
