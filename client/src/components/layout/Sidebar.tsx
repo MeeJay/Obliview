@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   DndContext,
@@ -37,8 +37,6 @@ import { useGroupStore } from '@/store/groupStore';
 import { useUiStore } from '@/store/uiStore';
 import { GroupTree } from '@/components/groups/GroupTree';
 import { agentApi } from '@/api/agent.api';
-import { appConfigApi } from '@/api/appConfig.api';
-import { ssoApi } from '@/api/sso.api';
 import { getSocket } from '@/socket/socketClient';
 import type { AgentDevice, MonitorStatus } from '@obliview/shared';
 import { SOCKET_EVENTS } from '@obliview/shared';
@@ -202,9 +200,6 @@ export function Sidebar() {
   // Keyed by deviceId. Overrides the monitorStore lookup (which requires agentDeviceId
   // to be populated in the store — not always reliable).
   const [deviceStatuses, setDeviceStatuses] = useState<Map<number, string>>(new Map());
-  const [obliguardUrl, setObliguardUrl] = useState<string | null>(null);
-  const [, startSsoTransition] = useTransition();
-
   const [search, setSearch] = useState('');
 
   // Layout preferences
@@ -227,13 +222,6 @@ export function Sidebar() {
   useEffect(() => {
     fetchMonitors();
   }, [fetchMonitors]);
-
-  // Load Obliguard URL from config (for the switch button)
-  useEffect(() => {
-    appConfigApi.getConfig()
-      .then((cfg) => setObliguardUrl(cfg.obliguard_url ?? null))
-      .catch(() => {});
-  }, []);
 
   // Fetch approved+suspended devices for sidebar (admin only)
   const loadDevices = useCallback(() => {
@@ -430,29 +418,6 @@ export function Sidebar() {
           <span className="text-lg font-semibold text-text-primary">Obliview</span>
         </Link>
         <div className="flex items-center gap-1">
-          {obliguardUrl && !sidebarFloating && (
-            <button
-              type="button"
-              onClick={() => {
-                startSsoTransition(() => {
-                  ssoApi.generateSwitchToken()
-                    .then((token) => {
-                      const from = window.location.origin;
-                      window.location.href = `${obliguardUrl}/auth/foreign?token=${encodeURIComponent(token)}&from=${encodeURIComponent(from)}&source=obliview`;
-                    })
-                    .catch(() => {
-                      window.location.href = obliguardUrl;
-                    });
-                });
-              }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border transition-all
-                text-[#fb923c] bg-[#431407]/40 border-[#c2410c]/50
-                hover:text-white hover:bg-[#431407]/60 hover:border-[#ea580c]"
-            >
-              <ArrowLeftRight size={12} />
-              Obliguard
-            </button>
-          )}
           <button
             onClick={toggleSidebarFloating}
             title={sidebarFloating ? t('nav.pinSidebar') : t('nav.floatSidebar')}
