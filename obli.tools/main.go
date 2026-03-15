@@ -37,7 +37,8 @@ const overlayJS = `(function(){
   if(!/^https?:/.test(location.protocol))return;
   if(window.__ov_injected)return;
   window.__ov_injected=true;
-  window.__obliview_is_native_app=true;
+  /* Flag recognised by every Obli* app header to hide the cross-app switch buttons. */
+  window.__obliview_is_native_app=window.__obliance_is_native_app=window.__oblimap_is_native_app=window.__obliguard_is_native_app=true;
 
   /* ── Sounds ──────────────────────────────────────────────── */
   function tone(f,t,d,v){
@@ -179,6 +180,9 @@ const appBarJS = `(function(){
       var r=await Promise.all([window.__go_getApps(),window.__go_getAlertCounts()]);
       apps=r[0]||[];counts=r[1]||{};
     }catch(e){return;}
+    /* Auto-discover linked apps from the server config (adds new entries silently). */
+    apps=await autoDiscoverApps(apps);
+
     if(!apps.length)return;
 
     window.__ov_appbar_injected=true;
@@ -208,6 +212,17 @@ const appBarJS = `(function(){
 
   /* ── Bar construction ──────────────────────────────────────────────── */
   function buildBar(apps,curApp,counts){
+    /* Ensure #root is pushed down so app content starts below the app bar.
+       tabBarJS will override this to 80px when it also injects a tenant bar.
+       On single-tenant apps tabBarJS exits early, so this is the only margin applied. */
+    var abCss=document.getElementById('__ov_ab_css');
+    if(!abCss){
+      abCss=document.createElement('style');
+      abCss.id='__ov_ab_css';
+      abCss.textContent='#root{margin-top:40px!important;height:calc(100vh - 40px)!important;overflow:hidden!important}#root>div{height:100%!important}';
+      if(document.head)document.head.appendChild(abCss);
+    }
+
     var bar=document.createElement('div');
     bar.id='__ov_ab';
     bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483641;height:40px;'
@@ -252,11 +267,7 @@ const appBarJS = `(function(){
       if(!active){
         tab.onmouseenter=function(){tab.style.color='#9090a4';dot.style.opacity='1';};
         tab.onmouseleave=function(){tab.style.color='#4a4a5a';dot.style.opacity='.35';};
-        tab.onclick=function(){
-          window.__go_switchApp(app.url)
-            .then(function(){window.location.replace(app.url);})
-            .catch(function(){window.location.replace(app.url);});
-        };
+        tab.onclick=function(){ssoNavigate(app);};
       }
       tw.appendChild(tab);
     });
@@ -289,6 +300,53 @@ const appBarJS = `(function(){
       b.style.display=n>0?'inline-flex':'none';
       b.textContent=n>9?'9+':String(n);
     }
+  }
+
+  /* ── SSO-aware navigation ───────────────────────────────────────────── */
+  /* Instead of a bare window.location.replace, we first generate a 60s SSO
+     token from the CURRENT app, then navigate to {targetApp}/auth/foreign.
+     Falls back to direct navigation if token generation fails (e.g. non-admin). */
+  function ssoNavigate(targetApp){
+    window.__go_switchApp(targetApp.url).catch(function(){});
+    fetch('/api/sso/generate-token',{method:'POST',credentials:'include'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var tok=(d.data&&d.data.token)||null;
+        var dest=tok
+          ?targetApp.url+'/auth/foreign?token='+encodeURIComponent(tok)+'&from='+encodeURIComponent(location.origin)+'&source=oblitools'
+          :targetApp.url;
+        window.location.replace(dest);
+      })
+      .catch(function(){window.location.replace(targetApp.url);});
+  }
+
+  /* ── Auto-discovery from /api/admin/config ──────────────────────────── */
+  /* Called once on bootstrap.  Adds any linked-app URLs that are configured
+     on the server but not yet in the local apps list. */
+  async function autoDiscoverApps(currentApps){
+    try{
+      var r=await fetch('/api/admin/config',{credentials:'include'});
+      if(!r.ok)return currentApps;
+      var body=await r.json();
+      var cfg=body.data||body;
+      var candidates=[
+        {u:cfg.obliguard_url||cfg.obliguardUrl,name:'Obliguard',color:'#fb923c'},
+        {u:cfg.oblimap_url||cfg.oblimapUrl,    name:'Oblimap',  color:'#10b981'},
+        {u:cfg.obliance_url||cfg.oblianceUrl,  name:'Obliance', color:'#a78bfa'},
+        {u:cfg.obliview_url||cfg.obliviewUrl,  name:'Obliview', color:'#6366f1'},
+      ];
+      var updated=currentApps.slice();var changed=false;
+      candidates.forEach(function(c){
+        if(!c.u)return;
+        var url=c.u.replace(/\/$/,'');
+        var exists=currentApps.some(function(a){
+          try{return new URL(a.url).origin===new URL(url).origin;}catch(e){return false;}
+        });
+        if(!exists){updated.push({name:c.name,url:url,color:c.color});changed=true;}
+      });
+      if(changed){try{await window.__go_saveApps(updated);}catch(e){}return updated;}
+      return currentApps;
+    }catch(e){return currentApps;}
   }
 
   /* ── Alert reporting (updates Go cache for this app) ───────────────── */
@@ -445,9 +503,7 @@ const appBarJS = `(function(){
       var nw=apps.concat([{name:n,url:u,color:selColor.v}]);
       try{await window.__go_saveApps(nw);}catch(e){}
       ov.remove();
-      window.__go_switchApp(u)
-        .then(function(){window.location.replace(u);})
-        .catch(function(){window.location.replace(u);});
+      ssoNavigate({url:u});
     };
     btns.appendChild(cancelB);btns.appendChild(addB);
     bx.appendChild(btns);
