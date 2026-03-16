@@ -196,9 +196,11 @@ const appBarJS = `(function(){
     }
     if(!curApp)curApp=apps[0];
 
-    /* Persist the current path so switching back restores the last page. */
+    /* Persist the current path so switching back restores the last page.
+       Skip /auth/* paths (e.g. /auth/foreign?token=...) — saving an SSO
+       callback URL as lastUrl would cause a redirect loop on the next switch. */
     var curPath=location.pathname+location.search+location.hash;
-    if(curPath&&curPath!=='/'&&typeof window.__go_saveAppLastURL==='function'){
+    if(curPath&&curPath!=='/'&&!/^\/auth\//.test(location.pathname)&&typeof window.__go_saveAppLastURL==='function'){
       window.__go_saveAppLastURL(curApp.url,curPath).catch(function(){});
     }
 
@@ -321,10 +323,11 @@ const appBarJS = `(function(){
       .then(function(r){return r.json();})
       .then(function(d){
         var tok=(d.data&&d.data.token)||null;
-        /* Determine the redirect path: forced path > last saved URL > dashboard */
+        /* Determine the redirect path: forced path > last saved URL > dashboard.
+           Reject /auth/* saved paths (corrupted from a previous bug) to prevent loops. */
         var returnPath=destPath||targetApp.lastUrl||'/';
-        /* Only allow relative paths (security: prevent open redirect) */
-        if(!/^\//.test(returnPath))returnPath='/';
+        /* Only allow safe relative paths (security + sanity) */
+        if(!/^\//.test(returnPath)||/^\/auth\//.test(returnPath))returnPath='/';
         var dest=tok
           ?targetApp.url+'/auth/foreign?token='+encodeURIComponent(tok)+'&from='+encodeURIComponent(location.origin)+'&source=oblitools'
             +'&redirect='+encodeURIComponent(returnPath)
