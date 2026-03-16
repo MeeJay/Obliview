@@ -120,7 +120,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Reload group collapsed state for this user+tenant context
       useGroupStore.getState().reinitForTenant(user.id, currentTenantId ?? null);
     } catch {
-      set({ user: null, permissions: null, requires2faSetup: false, isInitialized: true });
+      // Only clear user if login() hasn't already set one (race condition guard:
+      // App.tsx fires checkSession() on mount; if it resolves AFTER a successful
+      // login() call, the catch must not overwrite the freshly-authenticated user).
+      set((state) =>
+        state.user
+          ? { isInitialized: true }
+          : { user: null, permissions: null, requires2faSetup: false, isInitialized: true }
+      );
     }
   },
 
