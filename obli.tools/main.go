@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -170,6 +171,62 @@ const appBarJS = `(function(){
   if(!/^https?:/.test(location.protocol))return;
   if(window.__ov_appbar_injected)return;
   if(/^\/(login|enrollment|forgot-password|reset-password|reset)/.test(location.pathname))return;
+
+  /* ── IFRAME MODE ─────────────────────────────────────────────────────────
+     When ObliTools runs the persistent shell (iframes per app), appBarJS still
+     injects into each app iframe.  In that context we skip all UI rendering and
+     instead (a) track React Router navigations for lastUrl persistence and
+     (b) respond to SSO token requests from the shell.
+     Alert polling still runs so the shell badge cache stays fresh.            */
+  if(window!==window.top){
+    /* 1. URL tracker: report every SPA navigation to the shell so it can call
+          __go_saveAppLastURL.  Skip /auth/* to avoid persisting SSO callbacks. */
+    var _rep=function(){
+      var p=location.pathname+location.search+location.hash;
+      if(p&&!/^\/auth\//.test(p))window.parent.postMessage({type:'ot_url_change',path:p},'*');
+    };
+    if(document.readyState!=='loading')_rep();
+    else document.addEventListener('DOMContentLoaded',_rep,{once:true});
+    var _ps=history.pushState.bind(history),_rs=history.replaceState.bind(history);
+    history.pushState=function(){_ps.apply(this,arguments);_rep();};
+    history.replaceState=function(){_rs.apply(this,arguments);_rep();};
+    window.addEventListener('popstate',_rep);
+
+    /* 2. SSO token responder: shell sends {type:'ot_request_sso_token',id} →
+          we POST to this app's endpoint and reply with the token. */
+    window.addEventListener('message',function(e){
+      if(!e.data||e.data.type!=='ot_request_sso_token')return;
+      var id=e.data.id;
+      fetch('/api/sso/generate-token',{method:'POST',credentials:'include'})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          (e.source||parent).postMessage(
+            {type:'ot_sso_token',id:id,token:(d.data&&d.data.token)||null},'*');
+        })
+        .catch(function(){
+          (e.source||parent).postMessage({type:'ot_sso_token',id:id,token:null},'*');
+        });
+    });
+
+    /* 3. Alert polling (inline, no dependency on reportAlerts defined below).
+          Feeds __go_reportAlertCount so the shell can show badge counts. */
+    setTimeout(function(){
+      function _poll(){
+        fetch('/api/live-alerts/all',{credentials:'include'})
+          .then(function(r){return r.json();})
+          .then(function(d){
+            var items=Array.isArray(d.data)?d.data:(Array.isArray(d)?d:[]);
+            var n=items.filter(function(a){return !a.read_at&&!a.readAt;}).length;
+            if(typeof window.__go_reportAlertCount==='function')
+              window.__go_reportAlertCount(location.origin,n).catch(function(){});
+          }).catch(function(){});
+      }
+      _poll();
+      setInterval(_poll,30000);
+    },4000);
+
+    return; /* skip bar rendering — shell draws the app bar */
+  }
 
   /* Set to 0 synchronously so tabBarJS reads a defined value even before we finish. */
   window.__ov_app_bar_height=0;
@@ -1188,6 +1245,242 @@ func appColorFromURL(rawURL string) string {
 	}
 }
 
+// generateShellHTML builds the persistent multi-app shell page that is loaded via
+// w.SetHtml().  The shell renders the app-level tab bar and hosts one <iframe> per
+// configured app so that switching tabs merely shows/hides frames — no full reload,
+// no SSO round-trip — preserving React state and keeping all Socket.io connections
+// alive for background notification processing.
+//
+// Because w.SetHtml() loads on a non-http protocol (about:srcdoc), the existing
+// guard in appBarJS/overlayJS/tabBarJS skips injection in the shell itself.
+// Those scripts do run inside each app iframe (https:// protocol), where the
+// iframe block added to appBarJS handles URL tracking and SSO token responses.
+func generateShellHTML(cfg Config, ver string) string {
+	appsJSON, _ := json.Marshal(cfg.Apps)
+	activeURL := cfg.URL
+
+	return fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%%;height:100%%;overflow:hidden;background:#060610}
+#ot-bar{
+  position:fixed;top:0;left:0;right:0;height:40px;z-index:9999;
+  background:#060610;border-bottom:1px solid rgba(255,255,255,.07);
+  display:flex;align-items:stretch;user-select:none;-webkit-user-select:none;
+  font-family:system-ui,-apple-system,sans-serif}
+#ot-tabs{display:flex;align-items:stretch;flex:1;overflow:hidden}
+.ot-tab{
+  padding:0 14px;border:none;background:none;cursor:pointer;
+  font-size:12px;white-space:nowrap;flex-shrink:0;
+  display:flex;align-items:center;gap:6px;
+  transition:color .15s,border-color .15s;
+  border-bottom:2px solid transparent}
+.ot-tab.active{color:#e0e0e0;cursor:default}
+.ot-tab:not(.active){color:#4a4a5a}
+.ot-tab:not(.active):hover{color:#9090a4}
+.ot-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.ot-tab.active .ot-dot{opacity:1}
+.ot-tab:not(.active) .ot-dot{opacity:.35}
+.ot-tab:not(.active):hover .ot-dot{opacity:1}
+.ot-tab.active .ot-name{font-weight:600}
+.ot-bdg{
+  display:none;background:#ef4444;color:#fff;
+  border-radius:8px;font-size:10px;font-weight:700;
+  padding:1px 4px;min-width:15px;text-align:center;line-height:1.5;
+  align-items:center;justify-content:center}
+.ot-bdg.visible{display:inline-flex}
+#ot-frames{position:fixed;top:40px;left:0;right:0;bottom:0}
+#ot-frames iframe{
+  position:absolute;inset:0;width:100%%;height:100%%;
+  border:none;display:none;background:#060610}
+#ot-frames iframe.active{display:block}
+</style>
+</head><body>
+<div id="ot-bar"><div id="ot-tabs"></div></div>
+<div id="ot-frames"></div>
+<script>
+(function(){
+  var APPS=%s;
+  var ACTIVE_URL=%q;
+  var loaded=[];       // boolean per index: has src been set?
+  var activeIdx=0;
+  var pendingSso={};   // requestId → {resolve,reject}
+
+  /* ── Determine initial active app ──────────────────────────────────── */
+  for(var i=0;i<APPS.length;i++){
+    try{if(new URL(APPS[i].url).origin===new URL(ACTIVE_URL).origin){activeIdx=i;break;}}
+    catch(e){}
+  }
+
+  /* ── Build tab bar + iframes ────────────────────────────────────────── */
+  var tabs=document.getElementById('ot-tabs');
+  var frames=document.getElementById('ot-frames');
+
+  APPS.forEach(function(app,i){
+    var col=app.color||'#6366f1';
+
+    /* Tab button */
+    var btn=document.createElement('button');
+    btn.className='ot-tab'+(i===activeIdx?' active':'');
+    btn.style.borderBottomColor=i===activeIdx?col:'transparent';
+    btn.dataset.idx=i;
+
+    var dot=document.createElement('span');
+    dot.className='ot-dot';dot.style.background=col;
+
+    var nm=document.createElement('span');
+    nm.className='ot-name';nm.textContent=app.name;
+
+    var bdg=document.createElement('span');
+    bdg.className='ot-bdg';bdg.dataset.url=app.url;bdg.textContent='0';
+
+    btn.appendChild(dot);btn.appendChild(nm);btn.appendChild(bdg);
+    btn.addEventListener('click',function(){switchTo(i);});
+    tabs.appendChild(btn);
+    loaded.push(false);
+
+    /* iframe */
+    var fr=document.createElement('iframe');
+    fr.id='ot-f-'+i;
+    fr.setAttribute('allow','clipboard-read;clipboard-write;notifications');
+    if(i===activeIdx)fr.className='active';
+    frames.appendChild(fr);
+  });
+
+  /* ── Show/hide helper ───────────────────────────────────────────────── */
+  function setActive(idx){
+    document.querySelectorAll('.ot-tab').forEach(function(b,j){
+      var app=APPS[j];var col=app?app.color||'#6366f1':'#6366f1';
+      b.classList.toggle('active',j===idx);
+      b.style.borderBottomColor=j===idx?col:'transparent';
+    });
+    document.querySelectorAll('#ot-frames iframe').forEach(function(f,j){
+      f.classList.toggle('active',j===idx);
+    });
+  }
+
+  /* ── Request SSO token from source iframe ───────────────────────────── */
+  function requestSso(srcIdx){
+    return new Promise(function(resolve,reject){
+      var id=Math.random().toString(36).slice(2);
+      pendingSso[id]={resolve:resolve,reject:reject};
+      var fr=document.getElementById('ot-f-'+srcIdx);
+      if(!fr||!fr.contentWindow){reject(new Error('no frame'));return;}
+      var origin='*';
+      try{origin=new URL(APPS[srcIdx].url).origin;}catch(e){}
+      fr.contentWindow.postMessage({type:'ot_request_sso_token',id:id},origin);
+      setTimeout(function(){
+        if(pendingSso[id]){delete pendingSso[id];reject(new Error('timeout'));}
+      },6000);
+    });
+  }
+
+  /* ── Navigate a frame (with SSO if possible) ────────────────────────── */
+  function loadApp(idx){
+    if(loaded[idx])return;
+    loaded[idx]=true;
+    var app=APPS[idx];
+    var dest=app.lastUrl||'/';
+    if(!dest||/^\/auth\//.test(dest))dest='/';
+
+    /* Find first already-loaded frame to act as SSO source */
+    var srcIdx=-1;
+    for(var j=0;j<APPS.length;j++){if(loaded[j]&&j!==idx){srcIdx=j;break;}}
+
+    if(srcIdx>=0){
+      requestSso(srcIdx)
+        .then(function(tok){
+          var u=app.url+'/auth/foreign?token='+encodeURIComponent(tok)
+            +'&from=oblitools&source=oblitools'
+            +'&redirect='+encodeURIComponent(dest);
+          document.getElementById('ot-f-'+idx).src=u;
+        })
+        .catch(function(){
+          /* Fallback: direct navigation (relies on existing session cookie) */
+          document.getElementById('ot-f-'+idx).src=app.url+(dest!=='/'?dest:'');
+        });
+    }else{
+      /* First app ever — navigate directly; will use cookie or show login */
+      document.getElementById('ot-f-'+idx).src=app.url+(dest!=='/'?dest:'');
+    }
+  }
+
+  /* ── Switch to tab ──────────────────────────────────────────────────── */
+  function switchTo(idx){
+    if(idx===activeIdx&&loaded[idx])return;
+    var prev=activeIdx;
+    activeIdx=idx;
+    setActive(idx);
+    if(typeof window.__go_switchApp==='function')
+      window.__go_switchApp(APPS[idx].url).catch(function(){});
+    if(!loaded[idx])loadApp(idx);
+    /* Re-sync the previous frame's lastUrl after it becomes background */
+    void prev;
+  }
+
+  /* ── Initial load ────────────────────────────────────────────────────── */
+  loadApp(activeIdx);
+
+  /* Background-load remaining apps with a stagger so all sockets connect
+     (enables notifications from every app even when not visible).         */
+  var bgQueue=[];
+  for(var k=0;k<APPS.length;k++){if(k!==activeIdx)bgQueue.push(k);}
+  var bgDelay=3000;
+  bgQueue.forEach(function(idx){
+    setTimeout(function(){loadApp(idx);},bgDelay);
+    bgDelay+=3000;
+  });
+
+  /* ── Listen for messages from iframes ───────────────────────────────── */
+  window.addEventListener('message',function(e){
+    var d=e.data;if(!d||!d.type)return;
+
+    /* SSO token reply */
+    if(d.type==='ot_sso_token'){
+      var req=pendingSso[d.id];
+      if(req){
+        delete pendingSso[d.id];
+        if(d.token)req.resolve(d.token);else req.reject(new Error('no token'));
+      }
+    }
+
+    /* URL change from app iframe → persist lastUrl */
+    if(d.type==='ot_url_change'&&d.path){
+      var origin=e.origin;
+      for(var n=0;n<APPS.length;n++){
+        try{
+          if(new URL(APPS[n].url).origin===origin){
+            if(typeof window.__go_saveAppLastURL==='function')
+              window.__go_saveAppLastURL(APPS[n].url,d.path).catch(function(){});
+            break;
+          }
+        }catch(err){}
+      }
+    }
+  });
+
+  /* ── Badge polling (reads Go alert cache, updated by iframe appBarJS) ── */
+  function updateBadges(counts){
+    document.querySelectorAll('.ot-bdg').forEach(function(b){
+      var n=counts[b.dataset.url]||0;
+      b.textContent=n>9?'9+':String(n);
+      b.classList.toggle('visible',n>0);
+    });
+  }
+  setInterval(function(){
+    if(typeof window.__go_getAlertCounts==='function')
+      window.__go_getAlertCounts().then(updateBadges).catch(function(){});
+  },15000);
+  /* Initial badge fetch after a short delay */
+  setTimeout(function(){
+    if(typeof window.__go_getAlertCounts==='function')
+      window.__go_getAlertCounts().then(updateBadges).catch(function(){});
+  },5000);
+})();
+</script>
+</body></html>`, appsJSON, activeURL)
+}
+
 func main() {
 	cfg, _ := loadConfig()
 
@@ -1234,6 +1527,11 @@ func main() {
 		if err := saveConfig(cfg); err != nil {
 			fmt.Println("[oblitools] error saving config:", err)
 		}
+		// Transition from the setup page to the persistent shell.
+		// Must be dispatched on the UI thread (binding callbacks run on a worker).
+		w.Dispatch(func() {
+			w.SetHtml(generateShellHTML(*cfg, appVersion))
+		})
 	}); err != nil {
 		fmt.Println("[oblitools] bind error:", err)
 	}
@@ -1319,11 +1617,25 @@ func main() {
 	}
 
 	// __go_saveApps replaces the full apps list (add or remove entries).
+	// After saving, rebuild the shell so the tab bar reflects the new list.
 	if err := w.Bind("__go_saveApps", func(apps []AppEntry) {
 		cfg.Apps = apps
+		// Keep cfg.URL in sync with the first entry (or clear if list is empty).
+		if len(apps) > 0 {
+			cfg.URL = apps[0].URL
+		} else {
+			cfg.URL = ""
+		}
 		if err := saveConfig(cfg); err != nil {
 			fmt.Println("[oblitools] error saving apps:", err)
 		}
+		w.Dispatch(func() {
+			if len(cfg.Apps) == 0 {
+				w.SetHtml(setupHTML)
+			} else {
+				w.SetHtml(generateShellHTML(*cfg, appVersion))
+			}
+		})
 	}); err != nil {
 		fmt.Println("[oblitools] bind error:", err)
 	}
@@ -1411,14 +1723,20 @@ func main() {
 	w.Init(tabBarJS)
 	// Inject the app version so the React app can compare against the server's
 	// latest-desktop-version endpoint and show an update banner if needed.
-	w.Init(fmt.Sprintf("window.__obliview_app_version=%q;", appVersion))
+	// Inject the app version under every app's namespace so any app that has
+	// a DesktopUpdateBanner component can compare against the server version.
+	w.Init(fmt.Sprintf(
+		"window.__obliview_app_version=window.__obliguard_app_version=window.__oblimap_app_version=window.__obliance_app_version=%q;",
+		appVersion,
+	))
 
-	if cfg.URL == "" {
-		// First run — show the local setup page.
+	if len(cfg.Apps) == 0 {
+		// First run — no apps configured yet, show the setup page.
 		w.SetHtml(setupHTML)
 	} else {
-		// Navigate directly to the configured server instance.
-		w.Navigate(cfg.URL)
+		// Launch the persistent iframe shell.  All apps load inside iframes so
+		// switching tabs is instant and all Socket.io connections stay alive.
+		w.SetHtml(generateShellHTML(*cfg, appVersion))
 	}
 
 	w.Run()
