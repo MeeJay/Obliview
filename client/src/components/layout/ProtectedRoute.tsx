@@ -25,9 +25,25 @@ export function ProtectedRoute({ requiredRole }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
+  // In ObliTools (native desktop app), the app runs inside a cross-site iframe.
+  // Session cookies are blocked by SameSite policy until the server sends
+  // SameSite=None; Secure — which requires a server restart after the fix.
+  // Skip the enrollment redirect in this context to prevent a login loop:
+  // the enrollment wizard calls checkSession() on completion, which would get
+  // 401 (cookie not sent), clear the user, and redirect back to /login.
+  const isInObliTools = (() => {
+    try {
+      return window !== window.top;
+    } catch {
+      return true; // cross-origin frame access blocked → definitely in iframe
+    }
+  })() || !!(window as { __obliview_is_native_app?: boolean }).__obliview_is_native_app;
+
   // Redirect to enrollment if user hasn't completed the required enrollment version.
-  // Skip the check when already on /enroll to prevent a redirect loop.
+  // Skip the check when already on /enroll to prevent a redirect loop,
+  // and skip it entirely when running inside ObliTools (see above).
   if (
+    !isInObliTools &&
     (user.enrollmentVersion ?? 0) < REQUIRED_ENROLLMENT_VERSION &&
     location.pathname !== '/enroll'
   ) {
