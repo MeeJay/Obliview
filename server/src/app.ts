@@ -120,14 +120,14 @@ export function createApp() {
 
     sessionStore.get(token, (err, sessionData) => {
       if (!err && sessionData) {
-        const s = sessionData as Record<string, unknown>;
+        const s = sessionData as unknown as Record<string, unknown>;
         if (typeof s.userId === 'number') {
           req.session.userId        = s.userId;
           req.session.username      = (s.username as string)  ?? '';
           req.session.role          = (s.role as string)      ?? 'user';
           req.session.currentTenantId = (s.currentTenantId as number) ?? 1;
           if (typeof s.twoFaVerified === 'boolean') {
-            (req.session as Record<string, unknown>).twoFaVerified = s.twoFaVerified;
+            (req.session as unknown as Record<string, unknown>).twoFaVerified = s.twoFaVerified;
           }
         }
       }
