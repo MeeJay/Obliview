@@ -1,79 +1,110 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	webview "github.com/webview/webview_go"
 )
 
-// shellServeURL is set once in main() to "http://127.0.0.1:PORT/" after the
-// localhost shell server is started.  navigateShell() reads it to navigate
-// the webview to the shell page using a real http:// URL so that WebView2
-// reliably executes the page's inline <script> tags (WebView2 blocks script
-// execution on data:, file:// and about: protocol pages in many configurations).
-var shellServeURL string
+// ── Localhost shell server ────────────────────────────────────────────────────
+// The shell tab-bar HTML is served over http://127.0.0.1 so that WebView2
+// reliably executes its inline <script> tags (WebView2 silently blocks scripts
+// on about:, data: and file:// pages in many configurations).
 
-// shellMu guards shellHTMLStore and shellNavSeq.
-var shellMu sync.Mutex
-
-// shellHTMLStore holds the current shell HTML; updated by navigateShell before
-// each navigation so the localhost handler always serves the latest version.
-var shellHTMLStore string
-
-// shellNavSeq is incremented on every navigateShell call and appended as a
-// ?v=N query parameter so that navigating back to the same base URL forces
-// WebView2 to issue a fresh HTTP request (bypassing any browser-side caching).
-var shellNavSeq int
+var (
+	shellServeURL  string
+	shellMu        sync.Mutex
+	shellHTMLStore string
+	shellNavSeq    int
+)
 
 // defaultW / defaultH — initial window content size on first launch.
 const defaultW, defaultH = 1280, 800
 
-// appVersion is the desktop app version, read by the server to serve the
-// "latest desktop version" endpoint and injected into every page load so the
-// React app can detect when an update is available.
-// Using var (not const) so the build script can override via -ldflags "-X main.appVersion=x.y.z".
+// appVersion is injected via -ldflags "-X main.appVersion=x.y.z" at build time.
 var appVersion = "1.0.0"
 
-// overlayJS is injected on every page load via w.Init().
+// ── AppView ───────────────────────────────────────────────────────────────────
+// Each registered application gets its own native OS window (WebView2 instance)
+// so every app has an independent cookie store and persistent socket connections.
+
+type AppView struct {
+	Entry AppEntry
+	mu    sync.Mutex
+	view  webview.WebView
+	hwnd  uintptr // Win32 HWND; 0 until launchAppView sets it
+}
+
+func (av *AppView) getHWND() uintptr {
+	av.mu.Lock()
+	defer av.mu.Unlock()
+	return av.hwnd
+}
+
+func (av *AppView) getView() webview.WebView {
+	av.mu.Lock()
+	defer av.mu.Unlock()
+	return av.view
+}
+
+func (av *AppView) setViewAndHWND(v webview.WebView, h uintptr) {
+	av.mu.Lock()
+	av.view = v
+	av.hwnd = h
+	av.mu.Unlock()
+}
+
+// ── Global multi-app state ───────────────────────────────────────────────────
+
+var (
+	appViewsMu   sync.Mutex
+	allAppViews  []*AppView
+	activeAppIdx atomic.Int32 // index into allAppViews / cfg.Apps
+
+	// shellHWND is the shell window's native handle; set once in main() after
+	// webview.New() returns.  Read-only after that — no mutex needed.
+	shellHWND uintptr
+
+	// shellView is the shell WebView; goroutines use it for Dispatch/Eval calls.
+	shellView webview.WebView
+)
+
+// ── overlayJS ─────────────────────────────────────────────────────────────────
+// Injected via v.Init() into every app WebView on every page load.
 //
-// Safety guards:
-//   - Skips non-http(s) pages (e.g. the setup page loaded via SetHtml which
-//     appears as about:srcdoc / about:blank in some runtimes).
-//   - Idempotent: the __ov_injected flag prevents double-injection on
-//     same-origin navigations that don't fully reload the engine.
+// Guards:
+//   - Skips non-http(s) pages (setup page, about:blank, etc.)
+//   - Skips 127.0.0.1 / localhost (the shell tab-bar page)
+//   - Idempotent: __ov_injected flag prevents double-injection
 //
-// Exposes:
-//   - window.__obliview_is_native_app = true   (React app uses this to hide
-//     the "Download App" header link)
-//   - Listens for 'obliview:notify' CustomEvents dispatched by the React app
-//     and plays a distinct audio beep per notification type:
-//       probe_down  · probe_up  · agent_alert  · agent_fixed
-//   - Bottom-right ⚙ gear button that opens a URL-change dialog.
-//     On save → calls window.__go_saveURL(url) then navigates.
+// Provides:
+//   - Native-app flags recognised by all Obli* React apps
+//   - Notification sounds for 'obliview:notify' CustomEvents
+//   - Last-URL tracking via history patching → __go_saveAppLastURL
+//   - Alert count reporting → __go_reportAlertCount (feeds tab-bar badges)
+//   - Cross-app navigation intercept: location.replace/assign with a cross-origin
+//     URL calls __go_openInAppTab instead of navigating the current window away
+//   - Manifest auto-discovery → __go_proposeLinkedApps (adds new app tabs)
 const overlayJS = `(function(){
   if(!/^https?:/.test(location.protocol))return;
-  /* Shell page is always served from 127.0.0.1 — skip before DOM is parsed. */
   if(location.hostname==='127.0.0.1'||location.hostname==='localhost')return;
-  if(document.documentElement&&document.documentElement.dataset.oblitoolsShell)return;
-  /* Inside an ObliTools iframe: set the native-app flags (so apps can hide the
-     "Download App" banner, enable sounds, etc.) then return early — the ⚙ gear
-     button and resize listener are not meaningful inside an app iframe. */
-  var _inFrame=false;try{_inFrame=window!==window.top;}catch(e){_inFrame=true;}
-  if(_inFrame){
-    window.__obliview_is_native_app=window.__obliance_is_native_app=window.__oblimap_is_native_app=window.__obliguard_is_native_app=true;
-    return;
-  }
   if(window.__ov_injected)return;
   window.__ov_injected=true;
-  /* Flag recognised by every Obli* app header to hide the cross-app switch buttons. */
-  window.__obliview_is_native_app=window.__obliance_is_native_app=window.__oblimap_is_native_app=window.__obliguard_is_native_app=true;
 
-  /* ── Sounds ──────────────────────────────────────────────── */
+  /* Native-app flags — recognised by all Obli* apps to hide download banners. */
+  window.__obliview_is_native_app=window.__obliance_is_native_app=
+    window.__oblimap_is_native_app=window.__obliguard_is_native_app=true;
+
+  /* ── Notification sounds ──────────────────────────────────────────────── */
   function tone(f,t,d,v){
     try{
       var c=new(window.AudioContext||window.webkitAudioContext)();
@@ -88,21 +119,21 @@ const overlayJS = `(function(){
   var S={
     probe_down:function(){
       tone(440,'square',.12,.13);
-      setTimeout(function(){tone(290,'square',.24,.13)},115);
+      setTimeout(function(){tone(290,'square',.24,.13);},115);
     },
     probe_up:function(){
       tone(440,'sine',.12,.09);
-      setTimeout(function(){tone(660,'sine',.2,.09)},125);
+      setTimeout(function(){tone(660,'sine',.2,.09);},125);
     },
     agent_alert:function(){
       tone(880,'triangle',.09,.11);
-      setTimeout(function(){tone(880,'triangle',.09,.11)},145);
-      setTimeout(function(){tone(1100,'triangle',.15,.11)},290);
+      setTimeout(function(){tone(880,'triangle',.09,.11);},145);
+      setTimeout(function(){tone(1100,'triangle',.15,.11);},290);
     },
     agent_fixed:function(){
       tone(523,'sine',.1,.08);
-      setTimeout(function(){tone(659,'sine',.13,.08)},115);
-      setTimeout(function(){tone(784,'sine',.2,.08)},230);
+      setTimeout(function(){tone(659,'sine',.13,.08);},115);
+      setTimeout(function(){tone(784,'sine',.2,.08);},230);
     }
   };
   window.addEventListener('obliview:notify',function(e){
@@ -110,522 +141,78 @@ const overlayJS = `(function(){
     if(f)f();
   });
 
-  /* ── URL-change dialog ───────────────────────────────────── */
-  function openDialog(){
-    var ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);backdrop-filter:blur(8px)';
-    var bx=document.createElement('div');
-    bx.style.cssText='background:#1e1e2e;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:28px 32px;width:400px;color:#e0e0e0;font-family:system-ui,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.55)';
-    bx.innerHTML=
-      '<h3 style="margin:0 0 8px;font-size:16px;font-weight:600;color:#fff">Change Server URL</h3>'+
-      '<p style="margin:0 0 18px;font-size:13px;color:#888;line-height:1.55">Enter the URL of your server. The app will reload.</p>'+
-      '<input id="__ov_i" type="url" placeholder="https://my-app.example.com"'+
-        ' style="width:100%;box-sizing:border-box;padding:9px 12px;background:#252538;border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#e0e0e0;font-size:14px;outline:none;margin-bottom:16px">'+
-      '<div style="display:flex;gap:8px;justify-content:flex-end">'+
-        '<button id="__ov_c" style="padding:7px 16px;border-radius:6px;background:transparent;border:1px solid rgba(255,255,255,.15);color:#aaa;cursor:pointer;font-size:13px">Cancel</button>'+
-        '<button id="__ov_s" style="padding:7px 16px;border-radius:6px;background:#6366f1;border:none;color:#fff;cursor:pointer;font-size:13px;font-weight:500">Save &amp; Reload</button>'+
-      '</div>';
-    ov.appendChild(bx);
-    document.body.appendChild(ov);
-    var inp=document.getElementById('__ov_i');
-    inp.focus();
-    function close(){if(ov.parentNode)document.body.removeChild(ov);}
-    document.getElementById('__ov_c').onclick=close;
-    ov.onclick=function(e){if(e.target===ov)close();};
-    inp.addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('__ov_s').click();});
-    document.getElementById('__ov_s').onclick=function(){
-      var u=inp.value.trim();
-      if(!u)return;
-      if(!/^https?:\/\//i.test(u))u='https://'+u;
-      window.__go_saveURL(u).then(function(){window.location.replace(u);});
-    };
+  /* ── Last-URL tracking ────────────────────────────────────────────────── */
+  /* Persists the current page path after every SPA navigation so that
+     switching back to this app tab restores the exact last page visited.
+     /auth/* paths are excluded to avoid persisting SSO callback URLs.     */
+  function reportURL(){
+    var p=location.pathname+location.search+location.hash;
+    if(!p||/^\/auth\//.test(p))return;
+    if(typeof window.__go_saveAppLastURL==='function')
+      window.__go_saveAppLastURL(location.origin,p).catch(function(){});
   }
+  var _ps=history.pushState.bind(history),_rs=history.replaceState.bind(history);
+  history.pushState=function(){_ps.apply(this,arguments);setTimeout(reportURL,0);};
+  history.replaceState=function(){_rs.apply(this,arguments);setTimeout(reportURL,0);};
+  window.addEventListener('popstate',reportURL);
+  if(document.readyState!=='loading')reportURL();
+  else document.addEventListener('DOMContentLoaded',reportURL,{once:true});
 
-  /* ── Gear button ─────────────────────────────────────────── */
-  function injectGear(){
-    if(document.getElementById('__ov_g'))return;
-    var b=document.createElement('button');
-    b.id='__ov_g';
-    b.title='Change Server URL';
-    b.textContent='\u2699';
-    b.style.cssText=[
-      'position:fixed','bottom:14px','right:14px',
-      'z-index:2147483646','width:34px','height:34px',
-      'border-radius:50%','background:rgba(12,12,22,.78)',
-      'color:#777','font-size:17px',
-      'border:1px solid rgba(255,255,255,.1)',
-      'cursor:pointer','display:flex','align-items:center',
-      'justify-content:center','backdrop-filter:blur(4px)',
-      'opacity:.38','transition:opacity .2s,color .2s',
-      'line-height:1','padding:0'
-    ].join(';');
-    b.onmouseenter=function(){b.style.opacity='.95';b.style.color='#fff';};
-    b.onmouseleave=function(){b.style.opacity='.38';b.style.color='#777';};
-    b.onclick=openDialog;
-    document.body.appendChild(b);
-  }
-
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',injectGear);
-  }else{
-    injectGear();
-  }
-
-  /* ── Window-size persistence ──────────────────────────────────────── */
-  // Debounced resize listener: after the user stops dragging the window
-  // edge, call the Go binding so the new size is remembered across restarts.
-  // Uses window.innerWidth/innerHeight which matches the content-area size
-  // that webview.SetSize() expects (both use logical/CSS pixels).
-  var __ov_rs_t=null;
-  window.addEventListener('resize',function(){
-    clearTimeout(__ov_rs_t);
-    __ov_rs_t=setTimeout(function(){
-      if(typeof window.__go_saveSize==='function'){
-        window.__go_saveSize(window.innerWidth,window.innerHeight).catch(function(){});
-      }
-    },600);
-  });
-})();`
-
-// appBarJS is injected via w.Init() on every page load, BETWEEN overlayJS and tabBarJS.
-// It renders a 40 px app-level tab bar at the very top of the window when 2+ apps are
-// registered. Sets window.__ov_app_bar_height=40 so tabBarJS can offset itself correctly.
-//
-// Key behaviours:
-//   - Reads apps list from __go_getApps() and alert cache from __go_getAlertCounts()
-//   - Shows one tab per app: coloured dot + name + red badge (last-known unread count)
-//   - Active app: coloured bottom border, default cursor
-//   - Click on inactive app → __go_switchApp(url) then window.location.replace(url)
-//   - "+" button opens a manage dialog: list current apps, remove non-current, add new
-//   - Reports current app's unread count to Go cache every 30 s via __go_reportAlertCount
-//   - Auto-detects app name & colour from URL if it contains "obliance"/"oblimap"/"obliguard"
-const appBarJS = `(function(){
-  if(!/^https?:/.test(location.protocol))return;
-  /* Shell page is always served from 127.0.0.1 — skip before DOM is parsed. */
-  if(location.hostname==='127.0.0.1'||location.hostname==='localhost')return;
-  if(document.documentElement&&document.documentElement.dataset.oblitoolsShell)return;
-  if(window.__ov_appbar_injected)return;
-  if(/^\/(login|enrollment|forgot-password|reset-password|reset)/.test(location.pathname))return;
-
-  /* ── IFRAME MODE ─────────────────────────────────────────────────────────
-     When ObliTools runs the persistent shell (iframes per app), appBarJS still
-     injects into each app iframe.  In that context we skip all UI rendering and
-     instead (a) track React Router navigations for lastUrl persistence and
-     (b) respond to SSO token requests from the shell.
-     Alert polling still runs so the shell badge cache stays fresh.            */
-  var _inFrame=false;
-  try{_inFrame=(window!==window.top);}catch(e){_inFrame=true;}
-  if(_inFrame){
-    /* 1. URL tracker: report every SPA navigation to the shell so it can call
-          __go_saveAppLastURL.  Skip /auth/* to avoid persisting SSO callbacks. */
-    var _rep=function(){
-      var p=location.pathname+location.search+location.hash;
-      if(p&&!/^\/auth\//.test(p))window.parent.postMessage({type:'ot_url_change',path:p},'*');
-    };
-    if(document.readyState!=='loading')_rep();
-    else document.addEventListener('DOMContentLoaded',_rep,{once:true});
-    var _ps=history.pushState.bind(history),_rs=history.replaceState.bind(history);
-    history.pushState=function(){_ps.apply(this,arguments);_rep();};
-    history.replaceState=function(){_rs.apply(this,arguments);_rep();};
-    window.addEventListener('popstate',_rep);
-
-    /* 2. SSO token responder: shell sends {type:'ot_request_sso_token',id} →
-          we POST to this app's endpoint and reply with the token. */
-    window.addEventListener('message',function(e){
-      if(!e.data||e.data.type!=='ot_request_sso_token')return;
-      var id=e.data.id;
-      fetch('/api/sso/generate-token',{method:'POST',credentials:'include'})
-        .then(function(r){return r.json();})
-        .then(function(d){
-          (e.source||parent).postMessage(
-            {type:'ot_sso_token',id:id,token:(d.data&&d.data.token)||null},'*');
-        })
-        .catch(function(){
-          (e.source||parent).postMessage({type:'ot_sso_token',id:id,token:null},'*');
-        });
-    });
-
-    /* 3. Alert polling (inline, no dependency on reportAlerts defined below).
-          Feeds __go_reportAlertCount so the shell can show badge counts. */
-    setTimeout(function(){
-      function _poll(){
-        fetch('/api/live-alerts/all',{credentials:'include'})
-          .then(function(r){return r.json();})
-          .then(function(d){
-            var items=Array.isArray(d.data)?d.data:(Array.isArray(d)?d:[]);
-            var n=items.filter(function(a){return !a.read_at&&!a.readAt;}).length;
-            if(typeof window.__go_reportAlertCount==='function')
-              window.__go_reportAlertCount(location.origin,n).catch(function(){});
-          }).catch(function(){});
-      }
-      _poll();
-      setInterval(_poll,30000);
-    },4000);
-
-    return; /* skip bar rendering — shell draws the app bar */
-  }
-
-  /* Set to 0 synchronously so tabBarJS reads a defined value even before we finish. */
-  window.__ov_app_bar_height=0;
-
-  (async function(){
-    var apps,counts;
-    try{
-      var r=await Promise.all([window.__go_getApps(),window.__go_getAlertCounts()]);
-      apps=r[0]||[];counts=r[1]||{};
-    }catch(e){return;}
-    /* Auto-discover linked apps from the server config (adds new entries silently). */
-    apps=await autoDiscoverApps(apps);
-
-    if(!apps.length)return;
-
-    window.__ov_appbar_injected=true;
-    window.__ov_app_bar_height=40;
-
-    /* Find which app matches the current origin. */
-    var curOrigin=location.origin;
-    var curApp=null;
-    for(var i=0;i<apps.length;i++){
-      try{if(new URL(apps[i].url).origin===curOrigin){curApp=apps[i];break;}}catch(e){}
-    }
-    if(!curApp)curApp=apps[0];
-
-    /* Persist the current path so switching back restores the last page.
-       Skip /auth/* paths (e.g. /auth/foreign?token=...) — saving an SSO
-       callback URL as lastUrl would cause a redirect loop on the next switch. */
-    var curPath=location.pathname+location.search+location.hash;
-    if(curPath&&curPath!=='/'&&!/^\/auth\//.test(location.pathname)&&typeof window.__go_saveAppLastURL==='function'){
-      window.__go_saveAppLastURL(curApp.url,curPath).catch(function(){});
-    }
-
-    function domReady(fn){
-      if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',fn,{once:true});
-      else fn();
-    }
-    domReady(function(){buildBar(apps,curApp,counts);});
-
-    /* Report this app's unread count to Go cache on load and every 30 s. */
-    reportAlerts(curApp.url);
-    setInterval(function(){
-      reportAlerts(curApp.url);
-      window.__go_getAlertCounts().then(updateBdg).catch(function(){});
-    },30000);
-  })();
-
-  /* ── Bar construction ──────────────────────────────────────────────── */
-  function buildBar(apps,curApp,counts){
-    /* Ensure #root is pushed down so app content starts below the app bar.
-       tabBarJS will override this to 80px when it also injects a tenant bar.
-       On single-tenant apps tabBarJS exits early, so this is the only margin applied. */
-    var abCss=document.getElementById('__ov_ab_css');
-    if(!abCss){
-      abCss=document.createElement('style');
-      abCss.id='__ov_ab_css';
-      abCss.textContent='#root{margin-top:40px!important;height:calc(100vh - 40px)!important;overflow:hidden!important}#root>div{height:100%!important}';
-      if(document.head)document.head.appendChild(abCss);
-    }
-
-    var bar=document.createElement('div');
-    bar.id='__ov_ab';
-    bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483641;height:40px;'
-      +'background:#060610;border-bottom:1px solid rgba(255,255,255,.07);'
-      +'display:flex;align-items:stretch;user-select:none;-webkit-user-select:none';
-
-    var tw=document.createElement('div');
-    tw.style.cssText='display:flex;align-items:stretch;flex:1;overflow:hidden';
-
-    apps.forEach(function(app){
-      var active=app===curApp;
-      var col=app.color||'#6366f1';
-      var n=counts[app.url]||0;
-
-      var tab=document.createElement('button');
-      tab.style.cssText=
-        'padding:0 14px;border:none;background:none;'
-        +'border-bottom:2px solid '+(active?col:'transparent')+';'
-        +'color:'+(active?'#e0e0e0':'#4a4a5a')+';'
-        +'font-size:12px;font-weight:'+(active?'600':'400')+';'
-        +'cursor:'+(active?'default':'pointer')+';'
-        +'white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:6px;'
-        +'font-family:system-ui,-apple-system,sans-serif;transition:color .15s,border-color .15s';
-
-      var dot=document.createElement('span');
-      dot.style.cssText='width:6px;height:6px;border-radius:50%;background:'+col
-        +';flex-shrink:0;opacity:'+(active?'1':'.35');
-
-      var nm=document.createElement('span');
-      nm.textContent=app.name;
-
-      var bdg=document.createElement('span');
-      bdg.className='__ov_ab_bdg';
-      bdg.setAttribute('data-url',app.url);
-      bdg.style.cssText='display:'+(n>0?'inline-flex':'none')+';background:#ef4444;color:#fff;'
-        +'border-radius:8px;font-size:10px;font-weight:700;padding:1px 4px;min-width:15px;'
-        +'text-align:center;line-height:1.5;align-items:center;justify-content:center';
-      bdg.textContent=n>9?'9+':String(n);
-
-      tab.appendChild(dot);tab.appendChild(nm);tab.appendChild(bdg);
-
-      if(!active){
-        tab.onmouseenter=function(){tab.style.color='#9090a4';dot.style.opacity='1';};
-        tab.onmouseleave=function(){tab.style.color='#4a4a5a';dot.style.opacity='.35';};
-        tab.onclick=function(){ssoNavigate(app);};
-      }
-      tw.appendChild(tab);
-    });
-    bar.appendChild(tw);
-
-    /* "+" manage button */
-    var mgBtn=document.createElement('button');
-    mgBtn.style.cssText=
-      'padding:0 13px;border:none;border-left:1px solid rgba(255,255,255,.06);'
-      +'background:none;color:#333;font-size:18px;cursor:pointer;flex-shrink:0;'
-      +'display:flex;align-items:center;justify-content:center;transition:color .15s;'
-      +'line-height:1;font-family:system-ui,-apple-system,sans-serif';
-    mgBtn.title='Manage apps';
-    mgBtn.textContent='+';
-    mgBtn.onmouseenter=function(){mgBtn.style.color='#aaa';};
-    mgBtn.onmouseleave=function(){mgBtn.style.color='#333';};
-    mgBtn.onclick=function(){openManage(apps,curApp);};
-    bar.appendChild(mgBtn);
-
-    if(document.body)document.body.insertBefore(bar,document.body.firstChild);
-  }
-
-  /* ── Badge update (called on polling interval) ─────────────────────── */
-  function updateBdg(counts){
-    var all=document.querySelectorAll('.__ov_ab_bdg');
-    for(var i=0;i<all.length;i++){
-      var b=all[i];
-      var u=b.getAttribute('data-url');
-      var n=counts[u]||0;
-      b.style.display=n>0?'inline-flex':'none';
-      b.textContent=n>9?'9+':String(n);
-    }
-  }
-
-  /* ── SSO-aware navigation ───────────────────────────────────────────── */
-  /* Instead of a bare window.location.replace, we first generate a 60s SSO
-     token from the CURRENT app, then navigate to {targetApp}/auth/foreign.
-     Falls back to direct navigation if token generation fails (e.g. non-admin).
-     destPath (optional): if provided, overrides the saved lastUrl redirect target.
-     This lets agent deep-link buttons force a specific page instead of restoring
-     the last visited page. */
-  function ssoNavigate(targetApp,destPath){
-    window.__go_switchApp(targetApp.url).catch(function(){});
-    fetch('/api/sso/generate-token',{method:'POST',credentials:'include'})
+  /* ── Alert count reporting ────────────────────────────────────────────── */
+  /* Keeps the Go badge-cache fresh so the shell tab bar shows live counts.  */
+  function reportAlerts(){
+    fetch('/api/live-alerts/all',{credentials:'include'})
       .then(function(r){return r.json();})
       .then(function(d){
-        var tok=(d.data&&d.data.token)||null;
-        /* Determine the redirect path: forced path > last saved URL > dashboard.
-           Reject /auth/* saved paths (corrupted from a previous bug) to prevent loops. */
-        var returnPath=destPath||targetApp.lastUrl||'/';
-        /* Only allow safe relative paths (security + sanity) */
-        if(!/^\//.test(returnPath)||/^\/auth\//.test(returnPath))returnPath='/';
-        var dest=tok
-          ?targetApp.url+'/auth/foreign?token='+encodeURIComponent(tok)+'&from='+encodeURIComponent(location.origin)+'&source=oblitools'
-            +'&redirect='+encodeURIComponent(returnPath)
-          :targetApp.url+(returnPath!=='/'?returnPath:'');
-        window.location.replace(dest);
-      })
-      .catch(function(){window.location.replace(targetApp.url);});
+        var items=Array.isArray(d.data)?d.data:(Array.isArray(d)?d:(d.alerts||[]));
+        var n=items.filter(function(a){return !a.read_at&&!a.readAt&&!a.read;}).length;
+        if(typeof window.__go_reportAlertCount==='function')
+          window.__go_reportAlertCount(location.origin,n).catch(function(){});
+      }).catch(function(){});
   }
+  setTimeout(function(){reportAlerts();setInterval(reportAlerts,30000);},4000);
 
-  /* ── Auto-discovery from /api/admin/config ──────────────────────────── */
-  /* Called once on bootstrap.  Adds any linked-app URLs that are configured
-     on the server but not yet in the local apps list. */
-  async function autoDiscoverApps(currentApps){
+  /* ── Cross-app navigation intercept ──────────────────────────────────── */
+  /* When React calls location.replace/assign with a cross-origin URL (e.g.
+     "Open this agent in Obliguard"), route to the target app's native window
+     instead of navigating the current WebView away.                         */
+  var _loc=window.location;
+  var _origReplace=_loc.replace.bind(_loc);
+  var _origAssign=_loc.assign.bind(_loc);
+  function maybeIntercept(href){
+    if(!href)return false;
     try{
-      var r=await fetch('/api/admin/config',{credentials:'include'});
-      if(!r.ok)return currentApps;
-      var body=await r.json();
-      var cfg=body.data||body;
-      var candidates=[
-        {u:cfg.obliguard_url||cfg.obliguardUrl,name:'Obliguard',color:'#fb923c'},
-        {u:cfg.oblimap_url||cfg.oblimapUrl,    name:'Oblimap',  color:'#10b981'},
-        {u:cfg.obliance_url||cfg.oblianceUrl,  name:'Obliance', color:'#a78bfa'},
-        {u:cfg.obliview_url||cfg.obliviewUrl,  name:'Obliview', color:'#6366f1'},
-      ];
-      var updated=currentApps.slice();var changed=false;
-      candidates.forEach(function(c){
-        if(!c.u)return;
-        var url=c.u.replace(/\/$/,'');
-        var exists=currentApps.some(function(a){
-          try{return new URL(a.url).origin===new URL(url).origin;}catch(e){return false;}
-        });
-        if(!exists){updated.push({name:c.name,url:url,color:c.color});changed=true;}
-      });
-      if(changed){try{await window.__go_saveApps(updated);}catch(e){}return updated;}
-      return currentApps;
-    }catch(e){return currentApps;}
-  }
-
-  /* ── Alert reporting (updates Go cache for this app) ───────────────── */
-  async function reportAlerts(appUrl){
-    try{
-      var r=await fetch('/api/live-alerts/all',{credentials:'include'});
-      var d=await r.json();
-      var n=(d.alerts||[]).filter(function(a){return!a.read;}).length;
-      await window.__go_reportAlertCount(appUrl,n);
-    }catch(e){}
-  }
-
-  /* ── Manage apps dialog ─────────────────────────────────────────────── */
-  function openManage(apps,curApp){
-    if(document.getElementById('__ov_amd'))return;
-    var ov=document.createElement('div');
-    ov.id='__ov_amd';
-    ov.style.cssText=
-      'position:fixed;inset:0;z-index:2147483645;display:flex;align-items:center;'
-      +'justify-content:center;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);'
-      +'font-family:system-ui,-apple-system,sans-serif';
-
-    var bx=document.createElement('div');
-    bx.style.cssText=
-      'background:#13131f;border:1px solid rgba(255,255,255,.12);border-radius:14px;'
-      +'padding:26px 28px;width:420px;color:#e0e0e0';
-
-    var h=document.createElement('h3');
-    h.style.cssText='margin:0 0 16px;font-size:15px;font-weight:700;color:#fff';
-    h.textContent='Manage applications';
-    bx.appendChild(h);
-
-    /* ── Existing apps list ── */
-    var lst=document.createElement('div');
-    lst.style.cssText='margin-bottom:18px';
-    apps.forEach(function(app){
-      var row=document.createElement('div');
-      row.style.cssText=
-        'display:flex;align-items:center;gap:9px;padding:7px 0;'
-        +'border-bottom:1px solid rgba(255,255,255,.05)';
-      var dot=document.createElement('span');
-      dot.style.cssText='width:7px;height:7px;border-radius:50%;background:'
-        +(app.color||'#6366f1')+';flex-shrink:0';
-      var info=document.createElement('div');
-      info.style.cssText='flex:1;min-width:0';
-      var nm=document.createElement('div');
-      nm.style.cssText='font-size:13px;font-weight:500;color:#ccc';
-      nm.textContent=app.name;
-      var ul=document.createElement('div');
-      ul.style.cssText='font-size:10px;color:#444;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      ul.textContent=app.url;
-      info.appendChild(nm);info.appendChild(ul);
-      row.appendChild(dot);row.appendChild(info);
-      if(app===curApp){
-        var cur=document.createElement('span');
-        cur.style.cssText='font-size:10px;color:#6366f1;font-weight:500;flex-shrink:0';
-        cur.textContent='current';
-        row.appendChild(cur);
-      }else{
-        var rm=document.createElement('button');
-        rm.style.cssText=
-          'background:none;border:none;color:#333;cursor:pointer;font-size:18px;'
-          +'line-height:1;padding:0;flex-shrink:0;transition:color .15s';
-        rm.textContent='\xd7';
-        rm.onmouseenter=function(){rm.style.color='#f87171';};
-        rm.onmouseleave=function(){rm.style.color='#333';};
-        rm.onclick=async function(){
-          var nw=apps.filter(function(a){return a!==app;});
-          try{await window.__go_saveApps(nw);}catch(e){}
-          ov.remove();location.reload();
-        };
-        row.appendChild(rm);
+      var u=new URL(String(href),location.href);
+      if(u.origin!==location.origin&&/^https?:$/.test(u.protocol)){
+        if(typeof window.__go_openInAppTab==='function')
+          window.__go_openInAppTab(u.href).catch(function(){});
+        return true;
       }
-      lst.appendChild(row);
-    });
-    bx.appendChild(lst);
-
-    /* ── Add new app ── */
-    var secTitle=document.createElement('div');
-    secTitle.style.cssText=
-      'font-size:10px;font-weight:600;color:#444;text-transform:uppercase;'
-      +'letter-spacing:.6px;margin-bottom:9px';
-    secTitle.textContent='Add application';
-    bx.appendChild(secTitle);
-
-    function mkInput(ph,type){
-      var i=document.createElement('input');
-      i.type=type||'text';i.placeholder=ph;
-      i.style.cssText=
-        'width:100%;box-sizing:border-box;padding:8px 11px;background:#1a1a28;'
-        +'border:1px solid rgba(255,255,255,.09);border-radius:7px;color:#e0e0e0;'
-        +'font-size:13px;outline:none;margin-bottom:7px;transition:border-color .15s;'
-        +'font-family:system-ui,-apple-system,sans-serif';
-      i.onfocus=function(){i.style.borderColor='#6366f1';};
-      i.onblur=function(){i.style.borderColor='rgba(255,255,255,.09)';};
-      return i;
-    }
-    var urlIn=mkInput('https://obliance.example.com','url');
-    var nmIn=mkInput('App name (e.g. Obliance)');
-    bx.appendChild(urlIn);bx.appendChild(nmIn);
-
-    /* Colour swatches */
-    var sw=document.createElement('div');
-    sw.style.cssText='display:flex;align-items:center;gap:7px;margin-bottom:16px';
-    var swLbl=document.createElement('span');
-    swLbl.style.cssText='font-size:11px;color:#444;flex-shrink:0';
-    swLbl.textContent='Color:';
-    sw.appendChild(swLbl);
-    var selColor={v:'#a78bfa'};
-    ['#6366f1','#a78bfa','#10b981','#fb923c','#f59e0b','#94a3b8'].forEach(function(c){
-      var s=document.createElement('button');
-      s.style.cssText='width:17px;height:17px;border-radius:50%;background:'+c
-        +';border:2px solid '+(c===selColor.v?'#fff':'transparent')
-        +';cursor:pointer;padding:0;transition:border-color .15s;flex-shrink:0';
-      s.setAttribute('data-c',c);
-      s.onclick=function(){
-        selColor.v=c;
-        var all=sw.querySelectorAll('button[data-c]');
-        for(var i=0;i<all.length;i++){
-          all[i].style.borderColor=all[i].getAttribute('data-c')===c?'#fff':'transparent';
-        }
-      };
-      sw.appendChild(s);
-    });
-    bx.appendChild(sw);
-
-    /* Buttons */
-    var btns=document.createElement('div');
-    btns.style.cssText='display:flex;gap:8px;justify-content:flex-end';
-    var cancelB=document.createElement('button');
-    cancelB.style.cssText=
-      'padding:7px 16px;border-radius:7px;border:1px solid rgba(255,255,255,.12);'
-      +'background:none;color:#777;cursor:pointer;font-size:13px;'
-      +'font-family:system-ui,-apple-system,sans-serif;transition:color .15s';
-    cancelB.textContent='Cancel';
-    cancelB.onmouseenter=function(){cancelB.style.color='#ccc';};
-    cancelB.onmouseleave=function(){cancelB.style.color='#777';};
-    cancelB.onclick=function(){ov.remove();};
-
-    var addB=document.createElement('button');
-    addB.style.cssText=
-      'padding:7px 16px;border-radius:7px;border:none;background:#6366f1;'
-      +'color:#fff;cursor:pointer;font-size:13px;font-weight:500;'
-      +'font-family:system-ui,-apple-system,sans-serif;transition:opacity .15s';
-    addB.textContent='Add app';
-    addB.onmouseenter=function(){addB.style.opacity='.85';};
-    addB.onmouseleave=function(){addB.style.opacity='1';};
-    addB.onclick=async function(){
-      var u=urlIn.value.trim();
-      var n=nmIn.value.trim();
-      if(!u){urlIn.focus();return;}
-      if(!/^https?:\/\//i.test(u))u='https://'+u;
-      if(!n){n=u.replace(/^https?:\/\//,'').replace(/\/.*$/,'');}
-      var nw=apps.concat([{name:n,url:u,color:selColor.v}]);
-      try{await window.__go_saveApps(nw);}catch(e){}
-      ov.remove();
-      ssoNavigate({url:u});
-    };
-    btns.appendChild(cancelB);btns.appendChild(addB);
-    bx.appendChild(btns);
-    ov.appendChild(bx);
-    ov.onclick=function(e){if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
-    urlIn.focus();
+    }catch(e){}
+    return false;
   }
+  try{
+    window.location.replace=function(href){if(!maybeIntercept(href))_origReplace(href);};
+    window.location.assign=function(href){if(!maybeIntercept(href))_origAssign(href);};
+  }catch(e){}
+
+  /* ── Manifest auto-discovery ──────────────────────────────────────────── */
+  /* After login, fetch /api/oblitools/manifest and propose any linked apps
+     that are not yet in the apps list.  Non-admin users are supported because
+     the endpoint only requires session auth (requireAuth, not requireAdmin).  */
+  setTimeout(function(){
+    fetch('/api/oblitools/manifest',{credentials:'include'})
+      .then(function(r){if(!r.ok)throw r;return r.json();})
+      .then(function(d){
+        var linked=d&&d.data&&d.data.linkedApps;
+        if(!Array.isArray(linked)||!linked.length)return;
+        if(typeof window.__go_proposeLinkedApps==='function')
+          window.__go_proposeLinkedApps(linked).catch(function(){});
+      }).catch(function(){});
+  },4000);
 })();`
 
-// tabBarJS is injected via w.Init() on every page load, AFTER overlayJS.
+// tabBarJS is injected via v.Init() on every app WebView page load, AFTER overlayJS.
 // It detects multi-tenant logins and injects a 40 px fixed tab bar at the
 // top of the window with one tab per tenant (with per-tenant unread badges),
 // a cross-tenant Alerts panel, and an auto-cycling settings dialog.
@@ -1147,7 +734,7 @@ const tabBarJS = `(function(){
        Algorithm:
          5 s after page load  -> take a baseline snapshot of current unread IDs.
          Every 15 s after that -> fetch again; if any new unread ID from another
-           tenant is found, cancel auto-cycle and switchTo() that tenant immediately.
+         tenant is found, cancel auto-cycle and switchTo() that tenant immediately.
          Already-seen IDs are added to the baseline so they never re-trigger. */
     if(tabCfg.followAlertsEnabled){
       var seenIds=null; /* null = baseline not yet taken */
@@ -1252,8 +839,9 @@ function err(m){
 </body>
 </html>`
 
+// ── URL / app utilities ───────────────────────────────────────────────────────
+
 // appNameFromURL guesses a friendly app name from the URL.
-// Recognises the four Obli* apps by substring; falls back to the hostname prefix.
 func appNameFromURL(rawURL string) string {
 	lower := strings.ToLower(rawURL)
 	switch {
@@ -1280,80 +868,79 @@ func appNameFromURL(rawURL string) string {
 	return "App"
 }
 
-// appColorFromURL returns the brand colour for a known Obli* app, or indigo default.
+// appColorFromURL returns the brand colour for a known Obli* app.
 func appColorFromURL(rawURL string) string {
 	lower := strings.ToLower(rawURL)
 	switch {
 	case strings.Contains(lower, "obliance"):
-		return "#a78bfa" // violet
+		return "#a78bfa"
 	case strings.Contains(lower, "oblimap"):
-		return "#10b981" // emerald
+		return "#10b981"
 	case strings.Contains(lower, "obliguard"):
-		return "#fb923c" // orange
+		return "#fb923c"
 	default:
-		return "#6366f1" // indigo (Obliview default)
+		return "#6366f1"
 	}
 }
 
-// navigateShell writes the shell HTML to a temp file and navigates the webview to
-// navigateShell loads the shell HTML via the localhost HTTP server so that
-// WebView2 executes inline <script> tags normally.
-//
-// WebView2 silently blocks script execution on about:, data:, and file:// URLs
-// in many configurations (CSS loads, JS never fires).  Navigating to an
-// http://127.0.0.1 URL is the only approach that works reliably across all
-// WebView2 versions and Windows security configurations.
-//
-// The ?v=N query parameter changes on every call so that navigating to the same
-// logical URL triggers a fresh HTTP request even if the webview would otherwise
-// treat it as a same-page navigation.
-func navigateShell(w webview.WebView, html string) {
+// originOf returns "scheme://host" for rawURL, or "" on parse error.
+func originOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// sameOrigin reports whether a and b share the same URL origin.
+func sameOrigin(a, b string) bool {
+	oa := originOf(a)
+	return oa != "" && oa == originOf(b)
+}
+
+// ── Shell navigation ──────────────────────────────────────────────────────────
+
+// navigateShell stores html in the localhost server and triggers a fresh
+// navigation of the shell WebView.  Must be called from the shell UI thread
+// (i.e. directly in main() or via shellView.Dispatch).
+func navigateShell(html string) {
 	shellMu.Lock()
 	shellHTMLStore = html
 	shellNavSeq++
-	navSeq := shellNavSeq
+	seq := shellNavSeq
 	shellMu.Unlock()
 
 	if shellServeURL != "" {
-		w.Navigate(fmt.Sprintf("%s?v=%d", shellServeURL, navSeq))
+		shellView.Navigate(fmt.Sprintf("%s?v=%d", shellServeURL, seq))
 	} else {
-		// Fallback when the localhost server failed to start (should not happen).
-		w.SetHtml(html)
+		shellView.SetHtml(html)
 	}
 }
 
-// generateShellHTML builds the persistent multi-app shell page that is loaded via
-// navigateShell().  The shell renders the app-level tab bar and hosts one <iframe> per
-// configured app so that switching tabs merely shows/hides frames — no full reload,
-// no SSO round-trip — preserving React state and keeping all Socket.io connections
-// alive for background notification processing.
-//
-// generateShellHTML builds the persistent multi-app shell page.
-// It contains ONLY CSS and static DOM — no inline <script>.
-// All shell logic lives in shellInitJS (a w.Init() script) so it executes
-// via the host-injected mechanism and bypasses any Content Security Policy
-// that would otherwise block inline scripts on this page.
-func generateShellHTML(_ Config, _ string) string {
-	return `<!DOCTYPE html><html data-oblitools-shell="1"><head><meta charset="utf-8">
+// generateTabBarHTML returns the shell tab-bar HTML with apps and active index
+// embedded as JSON so the inline script can build tabs without extra round-trips.
+func generateTabBarHTML(cfg Config, activeIdx int) string {
+	appsJSON, _ := json.Marshal(cfg.Apps)
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en" data-oblitools-shell="1">
+<head><meta charset="UTF-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#060610}
+html,body{width:100%%;height:100%%;overflow:hidden;background:#060610;font-family:system-ui,-apple-system,sans-serif}
 #ot-bar{
   position:fixed;top:0;left:0;right:0;height:40px;z-index:9999;
   background:#060610;border-bottom:1px solid rgba(255,255,255,.07);
-  display:flex;align-items:stretch;user-select:none;-webkit-user-select:none;
-  font-family:system-ui,-apple-system,sans-serif}
+  display:flex;align-items:stretch;user-select:none;-webkit-user-select:none}
 #ot-tabs{display:flex;align-items:stretch;flex:1;overflow:hidden}
 .ot-tab{
   padding:0 14px;border:none;background:none;cursor:pointer;
   font-size:12px;white-space:nowrap;flex-shrink:0;
   display:flex;align-items:center;gap:6px;
-  transition:color .15s,border-color .15s;
-  border-bottom:2px solid transparent}
+  transition:color .15s,border-color .15s;border-bottom:2px solid transparent}
 .ot-tab.active{color:#e0e0e0;cursor:default}
 .ot-tab:not(.active){color:#4a4a5a}
 .ot-tab:not(.active):hover{color:#9090a4}
-.ot-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.ot-dot{width:6px;height:6px;border-radius:50%%;flex-shrink:0}
 .ot-tab.active .ot-dot{opacity:1}
 .ot-tab:not(.active) .ot-dot{opacity:.35}
 .ot-tab:not(.active):hover .ot-dot{opacity:1}
@@ -1363,20 +950,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060610}
   border-radius:8px;font-size:10px;font-weight:700;
   padding:1px 4px;min-width:15px;text-align:center;line-height:1.5;
   align-items:center;justify-content:center}
-.ot-bdg.visible{display:inline-flex}
-#ot-frames{position:fixed;top:40px;left:0;right:0;bottom:0}
-#ot-frames iframe{
-  position:absolute;inset:0;width:100%;height:100%;
-  border:none;display:none;background:#060610}
-#ot-frames iframe.active{display:block}
+.ot-bdg.on{display:inline-flex}
 #ot-manage{
   flex-shrink:0;width:36px;height:40px;border:none;background:none;cursor:pointer;
   color:#4a4a5a;font-size:16px;display:flex;align-items:center;justify-content:center;
-  transition:color .15s}
+  transition:color .15s;border-left:1px solid rgba(255,255,255,.05)}
 #ot-manage:hover{color:#9090a4}
 #ot-overlay{
-  display:none;position:fixed;inset:0;z-index:10000;
-  background:rgba(0,0,0,.55);align-items:flex-start;justify-content:flex-end}
+  display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);
+  align-items:flex-start;justify-content:flex-end}
 #ot-overlay.open{display:flex}
 #ot-panel{
   margin:44px 8px 0 0;background:#13141a;border:1px solid rgba(255,255,255,.1);
@@ -1384,15 +966,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060610}
   font-family:system-ui,-apple-system,sans-serif;box-shadow:0 16px 48px rgba(0,0,0,.6)}
 #ot-panel h3{font-size:13px;font-weight:600;color:#ccc;margin:0 0 12px;
   letter-spacing:.04em;text-transform:uppercase}
-.ot-app-row{display:flex;align-items:center;gap:8px;padding:6px 0;
+.ot-row{display:flex;align-items:center;gap:8px;padding:6px 0;
   border-bottom:1px solid rgba(255,255,255,.05)}
-.ot-app-row:last-child{border-bottom:none}
-.ot-app-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.ot-app-name{flex:1;font-size:13px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ot-app-url{font-size:10px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ot-app-del{background:none;border:none;color:#444;cursor:pointer;font-size:14px;
+.ot-row:last-child{border-bottom:none}
+.ot-rdot{width:8px;height:8px;border-radius:50%%;flex-shrink:0}
+.ot-rinfo{flex:1;min-width:0}
+.ot-rname{font-size:13px;color:#ccc}
+.ot-rurl{font-size:10px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ot-del{background:none;border:none;color:#444;cursor:pointer;font-size:14px;
   padding:2px 4px;border-radius:4px;transition:color .15s}
-.ot-app-del:hover{color:#f87171}
+.ot-del:hover{color:#f87171}
 #ot-add-row{display:flex;gap:6px;margin-top:12px}
 #ot-add-input{flex:1;background:#1e1e28;border:1px solid rgba(255,255,255,.1);
   border-radius:6px;color:#ccc;font-size:12px;padding:6px 10px;outline:none}
@@ -1402,264 +985,195 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060610}
 #ot-add-btn:hover{opacity:.85}
 </style>
 </head><body>
-<div id="ot-bar"><div id="ot-tabs"></div><button id="ot-manage" title="Manage apps">&#x2699;</button></div>
-<div id="ot-overlay"><div id="ot-panel">
-  <h3>Apps</h3>
-  <div id="ot-app-list"></div>
-  <div id="ot-add-row">
-    <input id="ot-add-input" type="url" placeholder="https://my-app.example.com">
-    <button id="ot-add-btn">Add</button>
+<div id="ot-bar">
+  <div id="ot-tabs"></div>
+  <button id="ot-manage" title="Manage apps">&#x2699;</button>
+</div>
+<div id="ot-overlay">
+  <div id="ot-panel">
+    <h3>Apps</h3>
+    <div id="ot-app-list"></div>
+    <div id="ot-add-row">
+      <input id="ot-add-input" type="url" placeholder="https://my-app.example.com">
+      <button id="ot-add-btn">Add</button>
+    </div>
   </div>
-</div></div>
-<div id="ot-frames"></div>
-</body></html>`
-}
+</div>
+<script>
+(function(){
+  var APPS=%s;
+  var activeIdx=%d;
+  var tabs=document.getElementById('ot-tabs');
 
-// shellInitJS is injected on every page via w.Init() and therefore executes as a
-// host-trusted script, bypassing any Content Security Policy restrictions that
-// would otherwise block inline <script> tags on the shell page.
-//
-// Guard: only runs when hostname is 127.0.0.1 (the localhost shell server).
-// All shell state (apps list, active URL) is fetched at runtime from Go via
-// __go_getShellConfig() so this string needs no fmt.Sprintf substitution and
-// can be registered once at startup.
-const shellInitJS = `(function(){
-  if(location.hostname!=='127.0.0.1'&&location.hostname!=='localhost')return;
+  function buildTabs(){
+    tabs.innerHTML='';
+    APPS.forEach(function(app,i){
+      var col=app.color||'#6366f1';
+      var btn=document.createElement('button');
+      btn.className='ot-tab'+(i===activeIdx?' active':'');
+      btn.style.borderBottomColor=i===activeIdx?col:'transparent';
 
-  /* Surface JS errors in the tab bar for easier debugging. */
-  window.onerror=function(msg,src,line){
-    var bar=document.getElementById('ot-tabs');
-    if(bar)bar.innerHTML='<span style="color:#ef4444;font-size:11px;padding:0 12px;line-height:40px">Shell error: '+msg+' ('+(line||'?')+')</span>';
-  };
+      var dot=document.createElement('span');
+      dot.className='ot-dot';dot.style.background=col;
 
-  function __ot_run(APPS,ACTIVE_URL){
-    var loaded=[];   // true once fr.src has been set for this index
-    var activeIdx=0;
+      var nm=document.createElement('span');
+      nm.className='ot-name';nm.textContent=app.name;
 
-  /* ── Determine initial active app ──────────────────────────────────── */
-  for(var i=0;i<APPS.length;i++){
-    try{if(new URL(APPS[i].url).origin===new URL(ACTIVE_URL).origin){activeIdx=i;break;}}
-    catch(e){}
+      var bdg=document.createElement('span');
+      bdg.className='ot-bdg';bdg.dataset.url=app.url;
+
+      btn.appendChild(dot);btn.appendChild(nm);btn.appendChild(bdg);
+      btn.addEventListener('click',(function(idx){
+        return function(){if(idx!==activeIdx)switchTo(idx);};
+      })(i));
+      tabs.appendChild(btn);
+    });
   }
 
-  /* ── Build tab bar + iframes ────────────────────────────────────────── */
-  var tabs=document.getElementById('ot-tabs');
-  var frames=document.getElementById('ot-frames');
-
-  APPS.forEach(function(app,i){
-    var col=app.color||'#6366f1';
-
-    /* Tab button */
-    var btn=document.createElement('button');
-    btn.className='ot-tab'+(i===activeIdx?' active':'');
-    btn.style.borderBottomColor=i===activeIdx?col:'transparent';
-    btn.dataset.idx=i;
-
-    var dot=document.createElement('span');
-    dot.className='ot-dot';dot.style.background=col;
-
-    var nm=document.createElement('span');
-    nm.className='ot-name';nm.textContent=app.name;
-
-    var bdg=document.createElement('span');
-    bdg.className='ot-bdg';bdg.dataset.url=app.url;bdg.textContent='0';
-
-    btn.appendChild(dot);btn.appendChild(nm);btn.appendChild(bdg);
-    btn.addEventListener('click',function(){switchTo(i);});
-    tabs.appendChild(btn);
-    loaded.push(false);
-
-    /* iframe — src is NOT set yet; loadApp() sets it on first visit */
-    var fr=document.createElement('iframe');
-    fr.id='ot-f-'+i;
-    fr.setAttribute('allow','clipboard-read;clipboard-write;notifications');
-    if(i===activeIdx)fr.className='active';
-    frames.appendChild(fr);
-  });
-
-  /* ── Show/hide helper (pure CSS toggle — never re-navigates) ─────────── */
-  function setActive(idx){
+  function setActiveTab(idx){
+    activeIdx=idx;
     document.querySelectorAll('.ot-tab').forEach(function(b,j){
-      var app=APPS[j];var col=app?app.color||'#6366f1':'#6366f1';
+      var col=APPS[j]?APPS[j].color||'#6366f1':'#6366f1';
       b.classList.toggle('active',j===idx);
       b.style.borderBottomColor=j===idx?col:'transparent';
     });
-    document.querySelectorAll('#ot-frames iframe').forEach(function(f,j){
-      f.classList.toggle('active',j===idx);
-    });
   }
 
-  /* ── Load an app into its iframe (called at most once per index) ──────── */
-  /* Navigates directly to app.url — existing session cookies handle auth.   */
-  /* The iframe is NEVER re-navigated after the first load; state is always  */
-  /* preserved when switching tabs.                                           */
-  function loadApp(idx){
-    if(loaded[idx])return;
-    loaded[idx]=true;
-    document.getElementById('ot-f-'+idx).src=APPS[idx].url;
-  }
-
-  /* ── Switch to tab (show/hide only — no reload, no SSO) ─────────────── */
   function switchTo(idx){
-    if(idx===activeIdx&&loaded[idx])return;
-    activeIdx=idx;
-    setActive(idx);
-    if(typeof window.__go_switchApp==='function')
-      window.__go_switchApp(APPS[idx].url).catch(function(){});
-    if(!loaded[idx])loadApp(idx);
+    setActiveTab(idx);
+    if(typeof window.__go_switchTab==='function')
+      window.__go_switchTab(idx).catch(function(){});
   }
 
-  /* ── Initial load ────────────────────────────────────────────────────── */
-  loadApp(activeIdx);
+  /* Called from Go via Eval when active tab changes (e.g. cross-app nav). */
+  window.__ot_setActiveTab=function(idx){setActiveTab(idx);};
 
-  /* Background-load the other apps with a stagger so their Socket.io
-     connections establish and badge counts stay live even off-screen.      */
-  var bgDelay=3000;
-  for(var k=0;k<APPS.length;k++){
-    if(k!==activeIdx){
-      (function(idx){
-        setTimeout(function(){loadApp(idx);},bgDelay);
-      })(k);
-      bgDelay+=3000;
-    }
-  }
+  /* Called from Go via Eval after apps list changes (add/remove/propose). */
+  window.__ot_rebuildTabs=function(apps,idx){APPS=apps;activeIdx=idx;buildTabs();};
 
-  /* ── Listen for messages from iframes ───────────────────────────────── */
-  window.addEventListener('message',function(e){
-    var d=e.data;if(!d||!d.type)return;
-
-    /* URL change from app iframe → persist lastUrl for next session */
-    if(d.type==='ot_url_change'&&d.path){
-      var origin=e.origin;
-      for(var n=0;n<APPS.length;n++){
-        try{
-          if(new URL(APPS[n].url).origin===origin){
-            if(typeof window.__go_saveAppLastURL==='function')
-              window.__go_saveAppLastURL(APPS[n].url,d.path).catch(function(){});
-            break;
-          }
-        }catch(err){}
-      }
-    }
-  });
-
-  /* ── Badge polling (reads Go alert cache, updated by iframe appBarJS) ── */
+  /* Badge update */
   function updateBadges(counts){
     document.querySelectorAll('.ot-bdg').forEach(function(b){
       var n=counts[b.dataset.url]||0;
       b.textContent=n>9?'9+':String(n);
-      b.classList.toggle('visible',n>0);
+      b.classList.toggle('on',n>0);
     });
   }
   setInterval(function(){
     if(typeof window.__go_getAlertCounts==='function')
       window.__go_getAlertCounts().then(updateBadges).catch(function(){});
   },15000);
-  /* Initial badge fetch after a short delay */
   setTimeout(function(){
     if(typeof window.__go_getAlertCounts==='function')
       window.__go_getAlertCounts().then(updateBadges).catch(function(){});
-  },5000);
+  },3000);
 
-  /* ── Manage overlay (⚙ button) ──────────────────────────────────────── */
+  /* Window resize → persist size */
+  var _rs=null;
+  window.addEventListener('resize',function(){
+    clearTimeout(_rs);
+    _rs=setTimeout(function(){
+      if(typeof window.__go_saveSize==='function')
+        window.__go_saveSize(window.innerWidth,window.innerHeight).catch(function(){});
+    },600);
+  });
+
+  /* Manage overlay */
   var overlay=document.getElementById('ot-overlay');
-  var manageBtn=document.getElementById('ot-manage');
-  function refreshAppList(){
-    var list=document.getElementById('ot-app-list');
-    list.innerHTML='';
-    APPS.forEach(function(app,i){
-      var row=document.createElement('div');row.className='ot-app-row';
-      var dot=document.createElement('span');dot.className='ot-app-dot';
-      dot.style.background=app.color||'#6366f1';
-      var info=document.createElement('div');info.style.cssText='flex:1;min-width:0';
-      var nm=document.createElement('div');nm.className='ot-app-name';nm.textContent=app.name;
-      var url=document.createElement('div');url.className='ot-app-url';url.textContent=app.url;
-      info.appendChild(nm);info.appendChild(url);
-      var del=document.createElement('button');del.className='ot-app-del';del.textContent='\u2715';
-      del.title='Remove';
-      del.addEventListener('click',function(){
-        APPS.splice(i,1);
-        if(typeof window.__go_saveApps==='function')
-          window.__go_saveApps(APPS).catch(function(){});
-      });
-      row.appendChild(dot);row.appendChild(info);row.appendChild(del);
-      list.appendChild(row);
-    });
-  }
-  manageBtn.addEventListener('click',function(e){
+  document.getElementById('ot-manage').addEventListener('click',function(e){
     e.stopPropagation();
-    refreshAppList();
+    refreshList();
     overlay.classList.toggle('open');
   });
   overlay.addEventListener('click',function(e){
     if(e.target===overlay)overlay.classList.remove('open');
   });
+
+  function refreshList(){
+    var list=document.getElementById('ot-app-list');
+    list.innerHTML='';
+    APPS.forEach(function(app,i){
+      var row=document.createElement('div');row.className='ot-row';
+      var dot=document.createElement('span');dot.className='ot-rdot';
+      dot.style.background=app.color||'#6366f1';
+      var info=document.createElement('div');info.className='ot-rinfo';
+      var nm=document.createElement('div');nm.className='ot-rname';nm.textContent=app.name;
+      var ul=document.createElement('div');ul.className='ot-rurl';ul.textContent=app.url;
+      info.appendChild(nm);info.appendChild(ul);
+      var del=document.createElement('button');del.className='ot-del';del.textContent='\u2715';
+      del.title='Remove';
+      del.addEventListener('click',(function(idx){
+        return function(){
+          APPS.splice(idx,1);
+          if(typeof window.__go_saveApps==='function')
+            window.__go_saveApps(APPS.slice()).catch(function(){});
+          refreshList();
+        };
+      })(i));
+      row.appendChild(dot);row.appendChild(info);row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
   document.getElementById('ot-add-btn').addEventListener('click',function(){
     var u=document.getElementById('ot-add-input').value.trim();
     if(!u)return;
     if(!/^https?:\/\//i.test(u))u='https://'+u;
     try{new URL(u);}catch(e){return;}
-    if(typeof window.__go_saveURL==='function')
-      window.__go_saveURL(u).catch(function(){});
+    var lower=u.toLowerCase();
+    var name=u.replace(/^https?:\/\//,'').replace(/\/.*/,'');
+    var color='#6366f1';
+    if(lower.indexOf('obliance')>=0)color='#a78bfa';
+    else if(lower.indexOf('oblimap')>=0)color='#10b981';
+    else if(lower.indexOf('obliguard')>=0)color='#fb923c';
+    APPS.push({name:name,url:u,color:color,lastUrl:''});
+    if(typeof window.__go_saveApps==='function')
+      window.__go_saveApps(APPS.slice()).catch(function(){});
     document.getElementById('ot-add-input').value='';
+    refreshList();
   });
   document.getElementById('ot-add-input').addEventListener('keydown',function(e){
     if(e.key==='Enter')document.getElementById('ot-add-btn').click();
   });
-  } /* end __ot_run */
 
-  /* Fetch shell config from Go and run once the DOM is ready. */
-  function start(){
-    if(typeof window.__go_getShellConfig!=='function'){
-      setTimeout(start,30);return;
-    }
-    window.__go_getShellConfig().then(function(cfg){
-      var APPS=cfg.apps||[];
-      var ACTIVE_URL=cfg.activeUrl||'';
-      if(document.readyState==='loading'){
-        document.addEventListener('DOMContentLoaded',function(){__ot_run(APPS,ACTIVE_URL);},{once:true});
-      }else{
-        __ot_run(APPS,ACTIVE_URL);
-      }
-    }).catch(function(e){
-      var bar=document.getElementById('ot-tabs');
-      if(bar)bar.innerHTML='<span style="color:#ef4444;font-size:11px;padding:0 12px;line-height:40px">Config error: '+e+'</span>';
-    });
-  }
-  start();
-})();`
+  buildTabs();
+})();
+</script>
+</body></html>`, string(appsJSON), activeIdx)
+}
 
-func main() {
-	cfg, _ := loadConfig()
+// ── Localhost shell HTTP server ───────────────────────────────────────────────
 
-	// Restore saved content-area dimensions, falling back to defaults on first run.
-	winW, winH := defaultW, defaultH
-	if cfg.Width >= 400 && cfg.Height >= 300 {
-		winW, winH = cfg.Width, cfg.Height
-	} else {
-		// Initialise so the first save (URL change or close) records a valid size.
-		cfg.Width, cfg.Height = defaultW, defaultH
+func startLocalServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		shellMu.Lock()
+		content := shellHTMLStore
+		shellMu.Unlock()
+		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		rw.Header().Set("Cache-Control", "no-store")
+		fmt.Fprint(rw, content)
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Println("[oblitools] failed to start local server:", err)
+		return
 	}
+	shellServeURL = fmt.Sprintf("http://127.0.0.1:%d/", ln.Addr().(*net.TCPAddr).Port)
+	go func() { _ = http.Serve(ln, mux) }()
+}
 
-	w := webview.New(false)
-	defer w.Destroy()
+// ── Shell WebView bindings ────────────────────────────────────────────────────
 
-	w.SetTitle("Obli.tools")
-	w.SetSize(winW, winH, webview.HintNone)
-
-	// Apply the app icon to the window (title bar on Windows, Dock on macOS).
-	// On macOS this also installs the standard Edit + App menu so that keyboard
-	// shortcuts such as Cmd+C, Cmd+Q, Cmd+V … work inside WKWebView.
-	applyWindowIcon(w.Window())
-
-	// __go_saveURL is callable from JS on both the setup page and the gear dialog.
-	// It persists the URL to disk; the JS side then does window.location.replace(url).
-	// Also ensures the URL is present in the Apps list (seeds first entry on new installs).
+func setupShellBindings(w webview.WebView, cfg *Config) {
+	// __go_saveURL: called from the setup page when user enters a server URL.
+	// Seeds the first app entry and transitions the shell to the tab-bar view.
 	if err := w.Bind("__go_saveURL", func(rawURL string) {
+		rawURL = strings.TrimRight(rawURL, "/")
 		cfg.URL = rawURL
 		found := false
 		for _, a := range cfg.Apps {
-			if a.URL == rawURL {
+			if sameOrigin(a.URL, rawURL) {
 				found = true
 				break
 			}
@@ -1675,100 +1189,49 @@ func main() {
 		if err := saveConfig(cfg); err != nil {
 			fmt.Println("[oblitools] error saving config:", err)
 		}
-		// Transition from the setup page to the persistent shell.
-		// Must be dispatched on the UI thread (binding callbacks run on a worker).
+		reconcileAppViews(cfg.Apps, cfg)
 		w.Dispatch(func() {
-			navigateShell(w, generateShellHTML(*cfg, appVersion))
+			navigateShell(generateTabBarHTML(*cfg, int(activeAppIdx.Load())))
 		})
 	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_saveURL:", err)
 	}
 
-	// __go_saveSize is called from overlayJS (debounced resize listener).
-	// It keeps cfg up-to-date in memory; the final saveConfig below persists it.
-	if err := w.Bind("__go_saveSize", func(width, height float64) {
-		if width >= 400 && height >= 300 {
-			cfg.Width = int(width)
-			cfg.Height = int(height)
+	// __go_switchTab: called from the shell tab-bar JS when the user clicks a tab.
+	// Shows the target app window and hides all others.
+	if err := w.Bind("__go_switchTab", func(idxFloat float64) {
+		idx := int(idxFloat)
+
+		appViewsMu.Lock()
+		views := make([]*AppView, len(allAppViews))
+		copy(views, allAppViews)
+		appViewsMu.Unlock()
+
+		if idx < 0 || idx >= len(views) {
+			return
 		}
-	}); err != nil {
-		fmt.Println("[obliview] bind error:", err)
-	}
-
-	// __go_getDownloadDir returns the currently saved download folder (or "" if
-	// not yet configured). Called by React on DownloadPage mount.
-	if err := w.Bind("__go_getDownloadDir", func() string {
-		return cfg.DownloadDir
-	}); err != nil {
-		fmt.Println("[obliview] bind error:", err)
-	}
-
-	// __go_chooseDownloadDir opens a native OS folder-picker dialog, persists
-	// the chosen path, and returns it. Rejects if the user cancels.
-	if err := w.Bind("__go_chooseDownloadDir", func() (string, error) {
-		dir, err := chooseFolder()
-		if err != nil {
-			return "", err // "cancelled" or system error
+		activeAppIdx.Store(int32(idx))
+		if idx < len(cfg.Apps) {
+			cfg.URL = cfg.Apps[idx].URL
 		}
-		cfg.DownloadDir = dir
-		if saveErr := saveConfig(cfg); saveErr != nil {
-			fmt.Println("[obliview] error saving config:", saveErr)
-		}
-		return dir, nil
-	}); err != nil {
-		fmt.Println("[obliview] bind error:", err)
-	}
-
-	// __go_downloadFile(relURL, filename) downloads a file from the Obliview
-	// server to the configured download folder. Opens the folder-picker first
-	// if no download folder has been set yet. After a successful download the
-	// file is revealed in the system file manager.
-	// relURL is a server-relative path such as "/downloads/ObliviewSetup.msi".
-	if err := w.Bind("__go_downloadFile", func(relURL, filename string) (string, error) {
-		dir := cfg.DownloadDir
-		if dir == "" {
-			chosen, err := chooseFolder()
-			if err != nil {
-				return "", err // cancelled
+		for i, av := range views {
+			h := av.getHWND()
+			if h == 0 {
+				continue
 			}
-			cfg.DownloadDir = chosen
-			if saveErr := saveConfig(cfg); saveErr != nil {
-				fmt.Println("[obliview] error saving config:", saveErr)
+			if i == idx {
+				positionAppWindow(h, shellHWND, 0, 0, true)
+			} else {
+				hideAppWindow(h)
 			}
-			dir = chosen
 		}
-		url := buildAbsoluteURL(cfg.URL, relURL)
-		dest, err := downloadFile(url, dir, filename)
-		if err != nil {
-			return "", err
-		}
-		revealFile(dest)
-		return dest, nil
 	}); err != nil {
-		fmt.Println("[obliview] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_switchTab:", err)
 	}
 
-	// __go_getTabConfig returns the current tab-cycling configuration.
-	// Called by tabBarJS on every page load to restore cycling state.
-	if err := w.Bind("__go_getTabConfig", func() TabConfig {
-		return cfg.TabConfig
-	}); err != nil {
-		fmt.Println("[obliview] bind error:", err)
-	}
-
-	// __go_getApps returns the ordered list of registered applications.
-	// Called by appBarJS on every page load.
-	if err := w.Bind("__go_getApps", func() []AppEntry {
-		return cfg.Apps
-	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
-	}
-
-	// __go_saveApps replaces the full apps list (add or remove entries).
-	// After saving, rebuild the shell so the tab bar reflects the new list.
+	// __go_saveApps: called from the shell manage dialog when apps are added/removed.
 	if err := w.Bind("__go_saveApps", func(apps []AppEntry) {
 		cfg.Apps = apps
-		// Keep cfg.URL in sync with the first entry (or clear if list is empty).
 		if len(apps) > 0 {
 			cfg.URL = apps[0].URL
 		} else {
@@ -1777,39 +1240,19 @@ func main() {
 		if err := saveConfig(cfg); err != nil {
 			fmt.Println("[oblitools] error saving apps:", err)
 		}
+		reconcileAppViews(apps, cfg)
 		w.Dispatch(func() {
 			if len(cfg.Apps) == 0 {
 				w.SetHtml(setupHTML)
 			} else {
-				navigateShell(w, generateShellHTML(*cfg, appVersion))
+				navigateShell(generateTabBarHTML(*cfg, int(activeAppIdx.Load())))
 			}
 		})
 	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_saveApps:", err)
 	}
 
-	// __go_switchApp updates the current URL in config (JS then navigates).
-	if err := w.Bind("__go_switchApp", func(rawURL string) {
-		cfg.URL = rawURL
-		if err := saveConfig(cfg); err != nil {
-			fmt.Println("[oblitools] error saving config:", err)
-		}
-	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
-	}
-
-	// __go_reportAlertCount updates the in-memory badge cache for one app URL.
-	// Called by appBarJS after fetching /api/live-alerts/all on the current app.
-	if err := w.Bind("__go_reportAlertCount", func(appURL string, count float64) {
-		alertCacheMu.Lock()
-		alertCache[appURL] = int(count)
-		alertCacheMu.Unlock()
-	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
-	}
-
-	// __go_getAlertCounts returns a snapshot of the full in-memory badge cache.
-	// Called by appBarJS to refresh badges for all app tabs.
+	// __go_getAlertCounts: returns badge-cache snapshot for the tab-bar JS.
 	if err := w.Bind("__go_getAlertCounts", func() map[string]int {
 		alertCacheMu.Lock()
 		defer alertCacheMu.Unlock()
@@ -1819,25 +1262,28 @@ func main() {
 		}
 		return cp
 	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_getAlertCounts:", err)
 	}
 
-	// __go_saveAppLastURL persists the last-visited path for a specific app.
-	// Called by appBarJS on every page navigation so that switching back to an
-	// app tab restores the user to where they were rather than the dashboard.
-	// appUrl is the app's root URL (matched by origin); lastUrl is the path.
-	if err := w.Bind("__go_saveAppLastURL", func(appUrl, lastUrl string) {
-		appOrigin := ""
-		if u, err := url.Parse(appUrl); err == nil {
-			appOrigin = u.Scheme + "://" + u.Host
+	// __go_saveSize: debounced resize listener in the shell HTML calls this.
+	if err := w.Bind("__go_saveSize", func(width, height float64) {
+		if width >= 400 && height >= 100 {
+			cfg.Width = int(width)
+			cfg.Height = int(height)
 		}
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_saveSize:", err)
+	}
+}
+
+// ── App WebView bindings ──────────────────────────────────────────────────────
+
+func setupAppBindings(v webview.WebView, av *AppView, cfg *Config) {
+	// __go_saveAppLastURL: track last-visited page path per app (from overlayJS).
+	if err := v.Bind("__go_saveAppLastURL", func(appOrigin, path string) {
 		for i := range cfg.Apps {
-			entryOrigin := ""
-			if u, err := url.Parse(cfg.Apps[i].URL); err == nil {
-				entryOrigin = u.Scheme + "://" + u.Host
-			}
-			if entryOrigin != "" && entryOrigin == appOrigin {
-				cfg.Apps[i].LastURL = lastUrl
+			if sameOrigin(cfg.Apps[i].URL, appOrigin) {
+				cfg.Apps[i].LastURL = path
 				if err := saveConfig(cfg); err != nil {
 					fmt.Println("[oblitools] error saving last url:", err)
 				}
@@ -1845,94 +1291,410 @@ func main() {
 			}
 		}
 	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_saveAppLastURL:", err)
 	}
 
-	// __go_saveTabConfig persists tab-cycling settings to disk.
-	// JS sends: autoCycleEnabled (bool), autoCycleIntervalS (number → float64),
-	//           followAlertsEnabled (bool).
-	if err := w.Bind("__go_saveTabConfig", func(autoCycleEnabled bool, autoCycleIntervalS float64, followAlertsEnabled bool) {
+	// __go_reportAlertCount: update badge cache for this app (from overlayJS).
+	if err := v.Bind("__go_reportAlertCount", func(appOrigin string, count float64) {
+		alertCacheMu.Lock()
+		alertCache[appOrigin] = int(count)
+		alertCacheMu.Unlock()
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_reportAlertCount:", err)
+	}
+
+	// __go_openInAppTab: cross-app deep-link navigation (from overlayJS intercept).
+	// Instead of navigating the current WebView away, the target app WebView is
+	// navigated to the specific URL and its tab is made active.
+	if err := v.Bind("__go_openInAppTab", func(rawURL string) {
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			return
+		}
+
+		appViewsMu.Lock()
+		var targetAV *AppView
+		targetIdx := -1
+		for i, x := range allAppViews {
+			if sameOrigin(x.Entry.URL, u.Scheme+"://"+u.Host) {
+				targetAV = x
+				targetIdx = i
+				break
+			}
+		}
+		appViewsMu.Unlock()
+
+		if targetAV == nil || targetIdx < 0 {
+			return
+		}
+
+		// Navigate target app to the full URL.
+		if tv := targetAV.getView(); tv != nil {
+			navURL := rawURL
+			tv.Dispatch(func() { tv.Navigate(navURL) })
+		}
+
+		// Switch active tab.
+		activeAppIdx.Store(int32(targetIdx))
+		if targetIdx < len(cfg.Apps) {
+			cfg.URL = cfg.Apps[targetIdx].URL
+		}
+
+		// Update shell tab-bar highlight.
+		shellView.Dispatch(func() {
+			shellView.Eval(fmt.Sprintf(
+				"if(typeof window.__ot_setActiveTab==='function')window.__ot_setActiveTab(%d);",
+				targetIdx,
+			))
+		})
+
+		// Show/hide app windows immediately.
+		appViewsMu.Lock()
+		for i, x := range allAppViews {
+			h := x.getHWND()
+			if h == 0 {
+				continue
+			}
+			if i == targetIdx {
+				positionAppWindow(h, shellHWND, 0, 0, true)
+			} else {
+				hideAppWindow(h)
+			}
+		}
+		appViewsMu.Unlock()
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_openInAppTab:", err)
+	}
+
+	// __go_proposeLinkedApps: manifest auto-discovery from overlayJS.
+	// Merges proposed apps into cfg.Apps without replacing existing entries.
+	if err := v.Bind("__go_proposeLinkedApps", func(proposed []AppEntry) {
+		appViewsMu.Lock()
+		changed := false
+		for _, p := range proposed {
+			found := false
+			for _, e := range cfg.Apps {
+				if sameOrigin(e.URL, p.URL) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.Apps = append(cfg.Apps, AppEntry{
+					Name:  p.Name,
+					URL:   p.URL,
+					Color: p.Color,
+				})
+				changed = true
+			}
+		}
+		appViewsMu.Unlock()
+
+		if !changed {
+			return
+		}
+		if err := saveConfig(cfg); err != nil {
+			fmt.Println("[oblitools] error saving proposed apps:", err)
+		}
+		reconcileAppViews(cfg.Apps, cfg)
+		shellView.Dispatch(func() {
+			navigateShell(generateTabBarHTML(*cfg, int(activeAppIdx.Load())))
+		})
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_proposeLinkedApps:", err)
+	}
+
+	// __go_getTabConfig: multi-tenant auto-cycling config (read by tabBarJS).
+	if err := v.Bind("__go_getTabConfig", func() TabConfig {
+		return cfg.TabConfig
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_getTabConfig:", err)
+	}
+
+	// __go_saveTabConfig: persist auto-cycling preferences (written by tabBarJS).
+	if err := v.Bind("__go_saveTabConfig", func(autoCycleEnabled bool, autoCycleIntervalS float64, followAlertsEnabled bool) {
 		cfg.TabConfig.AutoCycleEnabled = autoCycleEnabled
 		cfg.TabConfig.AutoCycleIntervalS = int(autoCycleIntervalS)
 		cfg.TabConfig.FollowAlertsEnabled = followAlertsEnabled
 		if err := saveConfig(cfg); err != nil {
-			fmt.Println("[obliview] error saving tab config:", err)
+			fmt.Println("[oblitools] error saving tab config:", err)
 		}
 	}); err != nil {
-		fmt.Println("[obliview] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_saveTabConfig:", err)
 	}
 
-	// __go_getShellConfig returns the apps list and active URL for the shell page.
-	// Called by shellInitJS (w.Init() script) on every shell page load so it can
-	// build the tab bar and iframes without needing data embedded in the HTML.
-	if err := w.Bind("__go_getShellConfig", func() interface{} {
-		return struct {
-			Apps      []AppEntry `json:"apps"`
-			ActiveURL string     `json:"activeUrl"`
-		}{Apps: cfg.Apps, ActiveURL: cfg.URL}
+	// __go_getDownloadDir: current download folder path.
+	if err := v.Bind("__go_getDownloadDir", func() string {
+		return cfg.DownloadDir
 	}); err != nil {
-		fmt.Println("[oblitools] bind error:", err)
+		fmt.Println("[oblitools] bind error __go_getDownloadDir:", err)
 	}
 
-	// Inject the shell init script — runs only on the 127.0.0.1 shell page.
-	// Uses w.Init() so it executes as a host-trusted script, bypassing any
-	// Content Security Policy that would block inline <script> tags.
-	w.Init(shellInitJS)
-	// Inject the overlay script on every page load.
-	w.Init(overlayJS)
-	// Inject the app-level tab bar (shows tabs for Obliview/Obliance/Oblimap/Obliguard).
-	w.Init(appBarJS)
-	// Inject the multi-tenant tab bar (no-op for single-tenant installs).
-	// Reads window.__ov_app_bar_height set by appBarJS to offset itself correctly.
-	w.Init(tabBarJS)
-	// Inject the app version so the React app can compare against the server's
-	// latest-desktop-version endpoint and show an update banner if needed.
-	// Inject the app version under every app's namespace so any app that has
-	// a DesktopUpdateBanner component can compare against the server version.
-	w.Init(fmt.Sprintf(
+	// __go_chooseDownloadDir: open native folder-picker dialog.
+	if err := v.Bind("__go_chooseDownloadDir", func() (string, error) {
+		dir, err := chooseFolder()
+		if err != nil {
+			return "", err
+		}
+		cfg.DownloadDir = dir
+		if saveErr := saveConfig(cfg); saveErr != nil {
+			fmt.Println("[oblitools] error saving config:", saveErr)
+		}
+		return dir, nil
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_chooseDownloadDir:", err)
+	}
+
+	// __go_downloadFile: download a server asset to the configured download dir.
+	if err := v.Bind("__go_downloadFile", func(relURL, filename string) (string, error) {
+		dir := cfg.DownloadDir
+		if dir == "" {
+			chosen, err := chooseFolder()
+			if err != nil {
+				return "", err
+			}
+			cfg.DownloadDir = chosen
+			if saveErr := saveConfig(cfg); saveErr != nil {
+				fmt.Println("[oblitools] error saving config:", saveErr)
+			}
+			dir = chosen
+		}
+		av.mu.Lock()
+		base := av.Entry.URL
+		av.mu.Unlock()
+		absURL := buildAbsoluteURL(base, relURL)
+		dest, err := downloadFile(absURL, dir, filename)
+		if err != nil {
+			return "", err
+		}
+		revealFile(dest)
+		return dest, nil
+	}); err != nil {
+		fmt.Println("[oblitools] bind error __go_downloadFile:", err)
+	}
+}
+
+// ── App WebView launcher ──────────────────────────────────────────────────────
+
+// launchAppView runs on a dedicated goroutine (one per app).
+// It creates a native OS window, strips its chrome, sets the shell as owner,
+// binds all per-app Go functions, injects scripts, navigates to the app URL,
+// and then blocks in v.Run() until the window is destroyed.
+func launchAppView(av *AppView, cfg *Config) {
+	// Each WebView needs its own OS thread for the Win32 message pump.
+	runtime.LockOSThread()
+
+	v := webview.New(false)
+	hwnd := uintptr(v.Window())
+
+	av.setViewAndHWND(v, hwnd)
+
+	// Strip OS title bar / borders and set the shell as Win32 owner so the
+	// app window has no taskbar entry and moves with the shell.
+	// These are no-ops on non-Windows platforms.
+	stripWindowChrome(hwnd)
+	setWindowOwner(hwnd, shellHWND)
+
+	// Determine whether this app should be visible on launch.
+	appViewsMu.Lock()
+	myIdx := -1
+	for i, x := range allAppViews {
+		if x == av {
+			myIdx = i
+			break
+		}
+	}
+	appViewsMu.Unlock()
+
+	showNow := myIdx >= 0 && int32(myIdx) == activeAppIdx.Load()
+	positionAppWindow(hwnd, shellHWND, 0, 0, showNow)
+
+	// Apply the app icon (title-bar / Alt-Tab thumbnail).
+	applyWindowIcon(v.Window())
+
+	// Bind per-app Go functions (URL tracking, badge cache, cross-app nav, etc.).
+	setupAppBindings(v, av, cfg)
+
+	// Inject scripts into every page load inside this WebView.
+	// Guards in each script skip 127.0.0.1 / non-https pages automatically.
+	v.Init(overlayJS)
+	v.Init(tabBarJS)
+	v.Init(fmt.Sprintf(
 		"window.__obliview_app_version=window.__obliguard_app_version=window.__oblimap_app_version=window.__obliance_app_version=%q;",
 		appVersion,
 	))
 
-	// ── Start localhost shell server ─────────────────────────────────────────
-	// The shell HTML page is served over http:// so that WebView2 executes its
-	// inline <script> tags.  WebView2 silently drops scripts on about:, data:
-	// and file:// URLs in many Windows configurations; http://127.0.0.1 works
-	// in every environment.
-	//
-	// The Init scripts (overlayJS / appBarJS / tabBarJS) all guard with:
-	//   if(document.documentElement.dataset.oblitoolsShell) return;
-	// so they skip injection on the shell page even though http:// passes the
-	// protocol check.
-	{
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-			shellMu.Lock()
-			content := shellHTMLStore
-			shellMu.Unlock()
-			rw.Header().Set("Content-Type", "text/html; charset=utf-8")
-			rw.Header().Set("Cache-Control", "no-store")
-			fmt.Fprint(rw, content)
-		})
-		if ln, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
-			shellServeURL = fmt.Sprintf("http://127.0.0.1:%d/", ln.Addr().(*net.TCPAddr).Port)
-			go func() { _ = http.Serve(ln, mux) }()
+	// Navigate to the app.  Restore the last-visited page when available.
+	av.mu.Lock()
+	entry := av.Entry
+	av.mu.Unlock()
+
+	dest := strings.TrimRight(entry.URL, "/")
+	if entry.LastURL != "" &&
+		strings.HasPrefix(entry.LastURL, "/") &&
+		!strings.HasPrefix(entry.LastURL, "/auth/") {
+		dest += entry.LastURL
+	}
+	v.Navigate(dest)
+
+	v.Run() // blocks until window is destroyed (shell close cascades via ownership)
+
+	av.setViewAndHWND(nil, 0)
+}
+
+// ── App-view reconciliation ───────────────────────────────────────────────────
+
+// reconcileAppViews diffs newApps against the current allAppViews slice.
+//   - Existing views whose URL origin is still present: entry is updated in-place.
+//   - New URLs: a fresh AppView goroutine is launched.
+//   - Removed URLs: the WebView is destroyed (v.Run() returns, goroutine exits).
+func reconcileAppViews(newApps []AppEntry, cfg *Config) {
+	appViewsMu.Lock()
+	defer appViewsMu.Unlock()
+
+	// Index existing views by origin.
+	byOrigin := make(map[string]*AppView, len(allAppViews))
+	for _, av := range allAppViews {
+		if org := originOf(av.Entry.URL); org != "" {
+			byOrigin[org] = av
 		}
 	}
 
-	if len(cfg.Apps) == 0 {
-		// First run — no apps configured yet, show the setup page.
-		w.SetHtml(setupHTML)
-	} else {
-		// Launch the persistent iframe shell.  All apps load inside iframes so
-		// switching tabs is instant and all Socket.io connections stay alive.
-		navigateShell(w, generateShellHTML(*cfg, appVersion))
+	next := make([]*AppView, 0, len(newApps))
+	for _, app := range newApps {
+		org := originOf(app.URL)
+		if av, ok := byOrigin[org]; ok {
+			// Update metadata; keep existing WebView running.
+			av.mu.Lock()
+			av.Entry = app
+			av.mu.Unlock()
+			next = append(next, av)
+			delete(byOrigin, org)
+		} else {
+			// New app — launch a WebView on a fresh goroutine.
+			av = &AppView{Entry: app}
+			next = append(next, av)
+			go launchAppView(av, cfg)
+		}
 	}
 
-	w.Run()
+	// Destroy removed views (Destroy causes Run() to return).
+	for _, av := range byOrigin {
+		if tv := av.getView(); tv != nil {
+			tv.Dispatch(func() { tv.Destroy() })
+		}
+	}
 
-	// Window closed — persist the final config (URL + last-known window size).
+	allAppViews = next
+}
+
+// ── Position sync loop ────────────────────────────────────────────────────────
+
+// startPositionSyncLoop polls every 50 ms and repositions all app windows to
+// stay flush below the shell tab bar.  When the shell is minimised, all app
+// windows are hidden; when restored they reappear automatically.
+//
+// Platform note: positionAppWindow / hideAppWindow / isWindowMinimized are
+// no-ops on non-Windows platforms — the loop is harmless everywhere.
+func startPositionSyncLoop() {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for range ticker.C {
+		h := shellHWND
+		if h == 0 {
+			continue
+		}
+
+		minimized := isWindowMinimized(h)
+		curActive := int(activeAppIdx.Load())
+
+		appViewsMu.Lock()
+		views := make([]*AppView, len(allAppViews))
+		copy(views, allAppViews)
+		appViewsMu.Unlock()
+
+		for i, av := range views {
+			hwnd := av.getHWND()
+			if hwnd == 0 {
+				continue
+			}
+			if minimized {
+				hideAppWindow(hwnd)
+			} else if i == curActive {
+				positionAppWindow(hwnd, h, 0, 0, true)
+			} else {
+				hideAppWindow(hwnd)
+			}
+		}
+	}
+}
+
+// ── main ──────────────────────────────────────────────────────────────────────
+
+func main() {
+	cfg, _ := loadConfig()
+
+	// Restore saved content-area dimensions, falling back to defaults on first run.
+	winW, winH := defaultW, defaultH
+	if cfg.Width >= 400 && cfg.Height >= 100 {
+		winW, winH = cfg.Width, cfg.Height
+	} else {
+		cfg.Width, cfg.Height = defaultW, defaultH
+	}
+
+	// Find the initial active app index (matches cfg.URL).
+	initialActive := 0
+	for i, app := range cfg.Apps {
+		if sameOrigin(app.URL, cfg.URL) {
+			initialActive = i
+			break
+		}
+	}
+	activeAppIdx.Store(int32(initialActive))
+
+	// Create the shell WebView on the main goroutine (= shell UI thread).
+	w := webview.New(false)
+	defer w.Destroy()
+
+	shellView = w
+	shellHWND = uintptr(w.Window())
+
+	w.SetTitle("Obli.tools")
+	w.SetSize(winW, winH, webview.HintNone)
+
+	// Apply the app icon (title bar on Windows, Dock on macOS).
+	applyWindowIcon(w.Window())
+
+	// Bind shell Go functions (setup page URL entry, tab switching, manage dialog).
+	setupShellBindings(w, cfg)
+
+	// Start the localhost HTTP server that serves the shell tab-bar HTML.
+	startLocalServer()
+
+	// Launch one WebView goroutine per configured app (all start hidden except
+	// the initially active one; the position sync loop manages visibility).
+	appViewsMu.Lock()
+	for _, app := range cfg.Apps {
+		av := &AppView{Entry: app}
+		allAppViews = append(allAppViews, av)
+		go launchAppView(av, cfg)
+	}
+	appViewsMu.Unlock()
+
+	// Start the 50 ms position-sync loop that keeps app windows aligned.
+	go startPositionSyncLoop()
+
+	// Navigate the shell to the setup page (no apps) or the tab bar.
+	if len(cfg.Apps) == 0 {
+		w.SetHtml(setupHTML)
+	} else {
+		navigateShell(generateTabBarHTML(*cfg, initialActive))
+	}
+
+	w.Run() // blocks until the shell window is closed
+
+	// Persist the final config (window size + last-known active URL).
 	if err := saveConfig(cfg); err != nil {
-		fmt.Println("[obliview] error saving config on exit:", err)
+		fmt.Println("[oblitools] error saving config on exit:", err)
 	}
 }
