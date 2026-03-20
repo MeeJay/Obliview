@@ -512,47 +512,77 @@ func collectMetrics() Metrics {
 	var m Metrics
 	initCPUInfo()
 
-	// ── CPU: overall % from per-core measurements ──────────────────────────────
-	corePcts, err := cpu.Percent(500*time.Millisecond, true)
-	if err == nil && len(corePcts) > 0 {
-		total := 0.0
-		for _, p := range corePcts {
-			total += p
-		}
-		avg := math.Round(total/float64(len(corePcts))*10) / 10
-		rounded := make([]float64, len(corePcts))
-		for i, p := range corePcts {
-			rounded[i] = math.Round(p*10) / 10
-		}
-		m.CPU = &CPUMetrics{
-			Percent: avg,
-			Cores:   rounded,
-			Model:   cpuModel,
-			FreqMHz: cpuFreqMHz,
-		}
-	} else if runtime.GOOS == "darwin" {
-		// Fallback for darwin/arm64 cross-compiled with CGO_ENABLED=0:
-		// gopsutil needs CGO to call host_processor_info (Mach) — use `top` instead.
-		// Per-core data is not available without CGO; Cores is left nil so the UI
-		// shows only the overall gauge rather than fake identical bars.
-		if pct, ok := getCPUPercentDarwin(); ok {
-			m.CPU = &CPUMetrics{
-				Percent: pct,
+	// ── Parallel collection ─────────────────────────────────────────────────────
+	// CPU (500ms sleep), GPU (PowerShell PDH counters ~2-3s on Windows), and
+	// platform temps (LHM ~0.5-1s) are the slowest operations.  Running them
+	// concurrently cuts total collection time from ~4-5s to ~2-3s on Windows.
+
+	var wg sync.WaitGroup
+
+	// -- CPU (blocks 500ms for delta measurement) --
+	var cpuMetrics *CPUMetrics
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		corePcts, err := cpu.Percent(500*time.Millisecond, true)
+		if err == nil && len(corePcts) > 0 {
+			total := 0.0
+			for _, p := range corePcts {
+				total += p
+			}
+			avg := math.Round(total/float64(len(corePcts))*10) / 10
+			rounded := make([]float64, len(corePcts))
+			for i, p := range corePcts {
+				rounded[i] = math.Round(p*10) / 10
+			}
+			cpuMetrics = &CPUMetrics{
+				Percent: avg,
+				Cores:   rounded,
 				Model:   cpuModel,
 				FreqMHz: cpuFreqMHz,
 			}
+		} else if runtime.GOOS == "darwin" {
+			if pct, ok := getCPUPercentDarwin(); ok {
+				cpuMetrics = &CPUMetrics{
+					Percent: pct,
+					Model:   cpuModel,
+					FreqMHz: cpuFreqMHz,
+				}
+			}
 		}
-	}
+	}()
 
-	// ── Load average (Linux/macOS only; returns error on Windows) ─────────────
-	if runtime.GOOS != "windows" {
-		loadStat, err := load.Avg()
+	// -- GPU (PowerShell/nvidia-smi — slowest on Windows) --
+	var gpuMetrics []GPUMetrics
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		gpuMetrics = collectGPUs()
+	}()
+
+	// -- Temperature sensors (LHM + NVMe on Windows) --
+	var gopsutilTemps []TempSensor
+	var platformTemps []TempSensor
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sensorTemps, err := host.SensorsTemperatures()
 		if err == nil {
-			m.LoadAvg = math.Round(loadStat.Load1*100) / 100
+			for _, t := range sensorTemps {
+				if t.Temperature <= 0 {
+					continue
+				}
+				gopsutilTemps = append(gopsutilTemps, TempSensor{
+					Label:   t.SensorKey,
+					Celsius: math.Round(t.Temperature*10) / 10,
+				})
+			}
 		}
-	}
+		// collectPlatformTemps caches LHM core clocks as a side-effect (Windows)
+		platformTemps = collectPlatformTemps()
+	}()
 
-	// ── Memory + swap + breakdown ──────────────────────────────────────────────
+	// -- Memory + swap (fast, ~1-5ms) — collect inline while goroutines run --
 	vmStat, err := mem.VirtualMemory()
 	if err == nil && vmStat.Total > 0 {
 		mm := &MemMetrics{
@@ -574,7 +604,15 @@ func collectMetrics() Metrics {
 		m.Memory.SwapUsedMB = swapStat.Used / 1048576
 	}
 
-	// ── Disks + I/O speeds ─────────────────────────────────────────────────────
+	// -- Load average (Linux/macOS only) --
+	if runtime.GOOS != "windows" {
+		loadStat, err := load.Avg()
+		if err == nil {
+			m.LoadAvg = math.Round(loadStat.Load1*100) / 100
+		}
+	}
+
+	// -- Disks + I/O speeds (fast, inline) --
 	partitions, err := disk.Partitions(false)
 	if err == nil {
 		now := time.Now()
@@ -601,17 +639,13 @@ func collectMetrics() Metrics {
 			if runtime.GOOS == "darwin" {
 				fs := p.Fstype
 				mp := p.Mountpoint
-				// Skip virtual/system filesystems
 				if fs == "devfs" || fs == "autofs" || fs == "nullfs" ||
 					strings.HasPrefix(fs, "map ") {
 					continue
 				}
-				// On APFS, skip all system-internal volumes except Data
-				// (user data lives at /System/Volumes/Data or just /)
 				if strings.HasPrefix(mp, "/System/Volumes/") && mp != "/System/Volumes/Data" {
 					continue
 				}
-				// Skip macOS private temp folders
 				if strings.HasPrefix(mp, "/private/var/folders/") {
 					continue
 				}
@@ -627,12 +661,10 @@ func collectMetrics() Metrics {
 				Percent: math.Round(usage.UsedPercent*10) / 10,
 			}
 
-			// Resolve device key for IOCounters map
 			dev := p.Device
 			if runtime.GOOS == "linux" {
 				parts := strings.Split(dev, "/")
 				dev = parts[len(parts)-1]
-				// Try base device (sda1 -> sda)
 				if ioCounters != nil {
 					trimmed := strings.TrimRight(dev, "0123456789")
 					if trimmed != dev {
@@ -660,7 +692,7 @@ func collectMetrics() Metrics {
 		diskMu.Unlock()
 	}
 
-	// ── Network per-interface + aggregate ──────────────────────────────────────
+	// -- Network per-interface + aggregate (fast, inline) --
 	netStats, err := gnet.IOCounters(true)
 	if err == nil {
 		now := time.Now()
@@ -710,34 +742,25 @@ func collectMetrics() Metrics {
 		}
 	}
 
-	// ── Temperature sensors ────────────────────────────────────────────────────
-	seen := make(map[string]bool)
+	// ── Wait for slow goroutines (CPU, GPU, temps) ─────────────────────────────
+	wg.Wait()
 
-	// 1. gopsutil: lm-sensors on Linux, ACPI thermal zones on Windows/macOS
-	sensorTemps, err := host.SensorsTemperatures()
-	if err == nil {
-		for _, t := range sensorTemps {
-			if t.Temperature <= 0 || seen[t.SensorKey] {
-				continue
-			}
-			seen[t.SensorKey] = true
-			m.Temps = append(m.Temps, TempSensor{
-				Label:   t.SensorKey,
-				Celsius: math.Round(t.Temperature*10) / 10,
-			})
+	// Merge CPU
+	m.CPU = cpuMetrics
+
+	// Merge temperatures (dedup by label)
+	seen := make(map[string]bool)
+	for _, t := range gopsutilTemps {
+		if !seen[t.Label] {
+			seen[t.Label] = true
+			m.Temps = append(m.Temps, t)
 		}
 	}
-
-	// 2. Platform-specific extras: NVMe temps + LHM + ASUS ATK (Windows),
-	//    no-op on Linux/macOS where gopsutil already covers hardware sensors.
-	//    Side-effect on Windows: collectPlatformTemps → collectLHMByDLL caches
-	//    per-core clock speeds in lhmCoreClocksVal for use below.
-	for _, t := range collectPlatformTemps() {
-		if seen[t.Label] {
-			continue
+	for _, t := range platformTemps {
+		if !seen[t.Label] {
+			seen[t.Label] = true
+			m.Temps = append(m.Temps, t)
 		}
-		seen[t.Label] = true
-		m.Temps = append(m.Temps, t)
 	}
 
 	// Per-core effective clock speeds from LHM (Windows only; stub returns nil).
@@ -747,17 +770,14 @@ func collectMetrics() Metrics {
 		}
 	}
 
-	// ── GPU ────────────────────────────────────────────────────────────────────
-	m.GPUs = collectGPUs()
+	// Merge GPUs
+	m.GPUs = gpuMetrics
 
-	// Add GPU temperatures to the Temps list so they appear alongside other
-	// hardware sensors. Works for all vendors (NVIDIA, AMD, Intel) on all
-	// platforms — no duplication: the `seen` map above prevents double entries.
+	// Add GPU temperatures to the Temps list
 	for i, gpu := range m.GPUs {
 		if gpu.TempCelsius <= 0 {
 			continue
 		}
-		// Build a snake_case label from the GPU model name.
 		name := strings.ToLower(gpu.Model)
 		for _, ch := range []string{" ", "/", "\\", "-", ".", "(", ")", ":", ","} {
 			name = strings.ReplaceAll(name, ch, "_")
