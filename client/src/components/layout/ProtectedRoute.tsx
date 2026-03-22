@@ -41,9 +41,11 @@ export function ProtectedRoute({ requiredRole }: ProtectedRouteProps) {
 
   // Redirect to enrollment if user hasn't completed the required enrollment version.
   // Skip the check when already on /enroll to prevent a redirect loop,
-  // and skip it entirely when running inside ObliTools (see above).
+  // skip it entirely when running inside ObliTools (see above),
+  // and skip it for Obligate SSO users (onboarding is managed by Gate).
   if (
     !isInObliTools &&
+    user.foreignSource !== 'obligate' &&
     (user.enrollmentVersion ?? 0) < REQUIRED_ENROLLMENT_VERSION &&
     location.pathname !== '/enroll'
   ) {
