@@ -26,11 +26,14 @@ router.get('/callback', async (req, res) => {
     const redirectUri = `${protocol}://${host}/auth/callback`;
 
     // Exchange code with Obligate
+    logger.info({ redirectUri }, 'Obligate callback: exchanging code');
     const assertion = await obligateService.exchangeCode(code, redirectUri);
     if (!assertion) {
-      res.status(401).json({ success: false, error: 'Invalid or expired authorization code' });
+      logger.warn('Obligate callback: exchange returned null — code invalid/expired or redirect_uri mismatch');
+      res.redirect('/login?error=sso_failed');
       return;
     }
+    logger.info({ obligateUserId: assertion.obligateUserId, username: assertion.username }, 'Obligate callback: exchange OK');
 
     // Find or create local user
     let localUserId: number;
@@ -117,7 +120,7 @@ router.get('/callback', async (req, res) => {
     });
   } catch (err) {
     logger.error(err, 'Obligate callback error');
-    res.status(500).json({ success: false, error: 'SSO callback failed' });
+    res.redirect('/login?error=sso_failed');
   }
 });
 

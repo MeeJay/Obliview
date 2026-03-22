@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
 import { twoFactorApi } from '@/api/twoFactor.api';
@@ -12,11 +12,15 @@ export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { login, isLoading, checkSession } = useAuthStore();
+  const [searchParams] = useSearchParams();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(searchParams.get('error') === 'sso_failed' ? 'SSO authentication failed. Please try local login.' : '');
   const [serverVersion, setServerVersion] = useState<string | null>(null);
+
+  // If we arrived here with ?error=sso_failed, don't auto-redirect to Obligate again
+  const ssoFailed = searchParams.get('error') === 'sso_failed';
 
   const [step, setStep] = useState<Step>('credentials');
   const [mfaMethods, setMfaMethods] = useState<{ totp: boolean; email: boolean }>({ totp: false, email: false });
@@ -42,6 +46,8 @@ export function LoginPage() {
           return;
         }
         // No session — check Obligate SSO and redirect if configured + reachable
+        // Skip if we just came back from a failed SSO attempt (prevents infinite loop)
+        if (ssoFailed) return;
         return fetch('/api/auth/sso-config')
           .then(r => r.json())
           .then((data: { success: boolean; data?: { obligateUrl: string | null; obligateReachable: boolean; obligateEnabled: boolean } }) => {
