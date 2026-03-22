@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { obligateService } from '../services/obligate.service';
 import { tenantService } from '../services/tenant.service';
+import { appConfigService } from '../services/appConfig.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -62,7 +63,7 @@ router.get('/callback', async (req, res) => {
         // Create new local user (foreign_source='obligate', no password)
         const [newUser] = await db('users')
           .insert({
-            username: `obligate_${assertion.obligateUserId}`,
+            username: `og_${assertion.username}`,
             display_name: assertion.displayName || assertion.username,
             email: assertion.email,
             role: assertion.role === 'admin' ? 'admin' : 'user',
@@ -110,8 +111,10 @@ router.get('/callback', async (req, res) => {
 
     logger.info(`Obligate SSO: user ${assertion.username} (obligate #${assertion.obligateUserId}) → local #${localUserId}`);
 
-    // Redirect to app
-    res.redirect('/');
+    // Save session explicitly before redirect to ensure cookie is set
+    req.session.save(() => {
+      res.redirect('/');
+    });
   } catch (err) {
     logger.error(err, 'Obligate callback error');
     res.status(500).json({ success: false, error: 'SSO callback failed' });
@@ -137,6 +140,50 @@ router.get('/sso-redirect', async (req, res) => {
     res.redirect(obligateUrl);
   } catch {
     res.redirect('/login');
+  }
+});
+
+/**
+ * GET /api/auth/app-info
+ * Called by Obligate (Bearer auth) to discover teams + tenants for mapping UI.
+ */
+router.get('/app-info', async (req, res) => {
+  try {
+    // Validate Bearer token = our Obligate API key (reverse auth: Obligate calls us)
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Missing Bearer token' });
+      return;
+    }
+    const raw = await appConfigService.getObligateRaw();
+    if (!raw.apiKey || authHeader.slice(7) !== raw.apiKey) {
+      res.status(401).json({ success: false, error: 'Invalid API key' });
+      return;
+    }
+
+    // Fetch all teams across all tenants
+    const teams = await db('user_teams')
+      .join('tenants', 'user_teams.tenant_id', 'tenants.id')
+      .select('user_teams.id', 'user_teams.name', 'tenants.slug as tenant_slug', 'tenants.name as tenant_name')
+      .orderBy('tenants.name')
+      .orderBy('user_teams.name') as Array<{ id: number; name: string; tenant_slug: string; tenant_name: string }>;
+
+    // Fetch all tenants
+    const tenants = await db('tenants')
+      .select('id', 'name', 'slug')
+      .orderBy('name') as Array<{ id: number; name: string; slug: string }>;
+
+    res.json({
+      success: true,
+      data: {
+        roles: ['admin', 'user'],
+        teams: teams.map(t => ({ id: t.id, name: t.name, tenantSlug: t.tenant_slug, tenantName: t.tenant_name })),
+        tenants: tenants.map(t => ({ slug: t.slug, name: t.name })),
+      },
+    });
+  } catch (err) {
+    logger.error(err, 'app-info error');
+    res.status(500).json({ success: false, error: 'Failed to fetch app info' });
   }
 });
 

@@ -31,21 +31,31 @@ export function LoginPage() {
       .then((data: { version?: string }) => setServerVersion(data.version ?? null))
       .catch(() => { /* ignore */ });
 
-    // Check Obligate SSO — redirect if configured and reachable
-    fetch('/api/auth/sso-config')
+    // First check if we already have a valid session (e.g. just came back from SSO callback).
+    // If yes, go straight to dashboard — do NOT redirect to Obligate again (infinite loop).
+    fetch('/api/auth/me', { credentials: 'include' })
       .then(r => r.json())
-      .then((data: { success: boolean; data?: { obligateUrl: string | null; obligateReachable: boolean; obligateEnabled: boolean } }) => {
-        if (data.success && data.data?.obligateEnabled && data.data.obligateUrl) {
-          if (data.data.obligateReachable) {
-            // Redirect to server-side SSO initiation (server knows the API key)
-            window.location.href = '/auth/sso-redirect';
-          } else {
-            setSsoUnavailable(true);
-          }
+      .then((d: { success?: boolean }) => {
+        if (d.success) {
+          // Already authenticated — go to dashboard
+          navigate('/', { replace: true });
+          return;
         }
+        // No session — check Obligate SSO and redirect if configured + reachable
+        return fetch('/api/auth/sso-config')
+          .then(r => r.json())
+          .then((data: { success: boolean; data?: { obligateUrl: string | null; obligateReachable: boolean; obligateEnabled: boolean } }) => {
+            if (data.success && data.data?.obligateEnabled && data.data.obligateUrl) {
+              if (data.data.obligateReachable) {
+                window.location.href = '/auth/sso-redirect';
+              } else {
+                setSsoUnavailable(true);
+              }
+            }
+          });
       })
       .catch(() => { /* ignore — show local login */ });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
