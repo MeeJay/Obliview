@@ -114,9 +114,13 @@ router.get('/callback', async (req, res) => {
 
     logger.info(`Obligate SSO: user ${assertion.username} (obligate #${assertion.obligateUserId}) → local #${localUserId}`);
 
-    // Save session explicitly before redirect to ensure cookie is set
-    req.session.save(() => {
-      res.redirect('/');
+    // Save session, then redirect via HTML meta refresh to ensure Set-Cookie header
+    // is fully processed by the browser before navigation occurs.
+    req.session.save((err) => {
+      if (err) { logger.error(err, 'Session save failed'); res.redirect('/login?error=sso_failed'); return; }
+      logger.info({ sessionId: req.sessionID, userId: req.session.userId }, 'Session saved, redirecting to /');
+      res.setHeader('Content-Type', 'text/html');
+      res.end('<html><head><meta http-equiv="refresh" content="0;url=/"></head><body>Redirecting...</body></html>');
     });
   } catch (err) {
     logger.error(err, 'Obligate callback error');
