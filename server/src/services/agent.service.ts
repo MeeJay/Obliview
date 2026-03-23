@@ -657,8 +657,6 @@ export const agentService = {
         })
         .returning('*') as AgentDeviceRow[];
       device = rowToDevice(row);
-      // Register device UUID with Obligate for cross-app linking (non-blocking)
-      obligateService.registerDeviceLink(deviceUuid, `/agents/${device.id}`).catch(() => {});
     } else {
       // Update device metadata — clear updating_since if set (agent came back after update)
       const metadataUpdate: Record<string, unknown> = {
@@ -688,6 +686,9 @@ export const agentService = {
         updatingSince: null,
       };
     }
+
+    // Register/update device UUID with Obligate for cross-app linking (non-blocking, idempotent)
+    obligateService.registerDeviceLink(deviceUuid, `/agents/${device.id}`).catch(() => {});
 
     // After if/else, device is always assigned (either new insert or existing update)
     const dev = device as AgentDevice;
