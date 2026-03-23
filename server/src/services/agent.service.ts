@@ -8,6 +8,7 @@ import { heartbeatService } from './heartbeat.service';
 import { notificationService } from './notification.service';
 import { liveAlertService } from './liveAlert.service';
 import { logger } from '../utils/logger';
+import { obligateService } from './obligate.service';
 
 // ── Socket.io instance (set from index.ts) ──────────────────
 let _io: SocketIOServer | null = null;
@@ -656,6 +657,8 @@ export const agentService = {
         })
         .returning('*') as AgentDeviceRow[];
       device = rowToDevice(row);
+      // Register device UUID with Obligate for cross-app linking (non-blocking)
+      obligateService.registerDeviceLink(deviceUuid, `/agents/${device.id}`).catch(() => {});
     } else {
       // Update device metadata — clear updating_since if set (agent came back after update)
       const metadataUpdate: Record<string, unknown> = {
