@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { db } from '../db';
 import { obligateService } from '../services/obligate.service';
 import { tenantService } from '../services/tenant.service';
@@ -19,6 +20,16 @@ router.get('/callback', async (req, res) => {
       res.status(400).json({ success: false, error: 'Missing code' });
       return;
     }
+
+    // Validate CSRF state parameter (RFC 6749 §10.12)
+    const expectedState = req.session?.oauthState;
+    if (!expectedState || !state || state !== expectedState) {
+      logger.warn({ expectedState: !!expectedState, receivedState: !!state }, 'Obligate callback: state mismatch — possible CSRF');
+      res.redirect('/login?error=sso_failed');
+      return;
+    }
+    // Clear used state
+    delete req.session.oauthState;
 
     // Build the redirect_uri that was used in the authorize request
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
@@ -182,9 +193,15 @@ router.get('/sso-redirect', async (req, res) => {
       return;
     }
     const redirectUri = `${selfUrl}/auth/callback`;
-    const obligateUrl = `${raw.url}/authorize?client_id=${encodeURIComponent(raw.apiKey)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    // Generate CSRF state token and store in session (RFC 6749 §10.12)
+    const oauthState = crypto.randomBytes(32).toString('hex');
+    req.session.oauthState = oauthState;
+    const obligateUrl = `${raw.url}/authorize?client_id=${encodeURIComponent(raw.apiKey)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(oauthState)}`;
     logger.info({ obligateUrl: raw.url, redirectUri }, 'sso-redirect: redirecting to Obligate');
-    res.redirect(obligateUrl);
+    // Save session before redirect to ensure state is persisted
+    req.session.save(() => {
+      res.redirect(obligateUrl);
+    });
   } catch {
     res.redirect('/login');
   }

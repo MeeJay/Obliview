@@ -415,7 +415,7 @@ export function Sidebar() {
       {/* Logo + float/pin toggle */}
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
         <Link to="/" className="flex items-center gap-2">
-          <img src="/logo.svg" alt="Obliview" className="h-10 w-10 rounded-lg" />
+          <img src="/logo.svg" alt="Obliview" className="h-10 w-auto max-w-[200px] object-contain" />
         </Link>
         <div className="flex items-center gap-1">
           <button
