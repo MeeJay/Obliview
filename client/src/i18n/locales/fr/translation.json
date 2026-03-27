@@ -478,12 +478,29 @@
     "removedFromGlobal": "Retiré du global",
     "addedToGlobal": "Ajouté au global",
     "noSmtp": "Aucun serveur SMTP configuré. Ajoutez-en un dans Paramètres → Serveurs SMTP.",
-    "selectSmtp": "— Sélectionnez un serveur SMTP —"
+    "selectSmtp": "— Sélectionnez un serveur SMTP —",
+    "failedLoad": "Échec du chargement des notifications",
+    "bindingAdded": "Liaison ajoutée",
+    "bindingRemoved": "Liaison supprimée",
+    "channelExcluded": "Canal exclu",
+    "failedAddBinding": "Échec de l'ajout de la liaison",
+    "failedRemoveBinding": "Échec de la suppression de la liaison",
+    "failedExcludeBinding": "Échec de l'exclusion du canal"
   },
   "settings": {
     "obligate": {
+      "title": "Passerelle SSO Obligate",
       "description": "Connectez cette application à votre passerelle SSO Obligate pour l'authentification centralisée et la navigation inter-applications. Enregistrez d'abord cette application dans Obligate, puis collez la clé API ici.",
-      "warning": "Lorsque cette option est activée, l'authentification locale est désactivée. Les utilisateurs doivent se connecter via la passerelle Obligate. Si la passerelle devient inaccessible, l'authentification locale est automatiquement rétablie en mode dégradé."
+      "warning": "Lorsque cette option est activée, l'authentification locale est désactivée. Les utilisateurs doivent se connecter via la passerelle Obligate. Si la passerelle devient inaccessible, l'authentification locale est automatiquement rétablie en mode dégradé.",
+      "urlLabel": "URL Obligate",
+      "urlPlaceholder": "https://sso.example.com",
+      "apiKeyLabel": "Clé API",
+      "apiKeyPlaceholder": "Collez la clé depuis Obligate → Applications connectées → Ajouter une application",
+      "enableSso": "Activer le SSO",
+      "enableSsoDesc": "Lorsque cette option est activée, la page de connexion redirige vers Obligate pour l'authentification. La connexion locale devient un mode dégradé si la passerelle est inaccessible.",
+      "saved": "Configuration Obligate enregistrée",
+      "failedSave": "Échec de l'enregistrement de la configuration Obligate",
+      "selfUrlError": "L'URL Obligate ne peut pas pointer vers cette application — elle doit pointer vers la passerelle Obligate."
     },
     "title": "Paramètres globaux",
     "globalDesc": "Ces valeurs par défaut s'appliquent à tous les groupes et moniteurs sauf si écrasées à un niveau inférieur.",
@@ -530,7 +547,8 @@
       "otpSmtpDesc": "Utilisé pour envoyer des codes à usage unique quand l'OTP par e-mail est activé.",
       "noneOption": "— Aucun —"
     },
-    "failedUpdate": "Échec de la mise à jour du paramètre"
+    "failedUpdate": "Échec de la mise à jour du paramètre",
+    "confirmDeleteSmtp": "Supprimer le serveur SMTP « {{name}} » ?"
   },
   "profile": {
     "title": "Mon profil",
@@ -545,6 +563,10 @@
     "saveProfile": "Enregistrer le profil",
     "profileUpdated": "Profil mis à jour",
     "failedProfile": "Échec de la mise à jour du profil",
+    "managedByObligate": "Profil géré par Obligate",
+    "managedByObligateDesc": "Votre profil, mot de passe et préférences sont gérés centralement via Obligate SSO.",
+    "openObligateProfile": "Ouvrir le profil Obligate",
+    "ssoLabel": "SSO",
     "password": {
       "title": "Modifier le mot de passe",
       "current": "Mot de passe actuel",
@@ -615,6 +637,12 @@
     "failedCreate": "Échec de la création de l'utilisateur",
     "failedUpdate": "Échec de la mise à jour de l'utilisateur",
     "failedDelete": "Échec de la suppression de l'utilisateur",
+    "failedLoad": "Échec du chargement des données",
+    "passwordChangedToast": "Mot de passe modifié",
+    "failedChangePasswordToast": "Échec du changement de mot de passe",
+    "failedLoadTenants": "Échec du chargement des affectations de locataires",
+    "tenantsSaved": "Affectations de locataires enregistrées",
+    "failedSaveTenants": "Échec de l'enregistrement des affectations de locataires",
     "confirmDelete": "Supprimer l'utilisateur « {{username}} » ?",
     "changePasswordTitle": "Mot de passe : {{username}}",
     "newPassword": "Nouveau mot de passe",
@@ -675,7 +703,54 @@
     "keepCurrent": "— Conserver l'actuel —",
     "noChange": "— Aucun changement —",
     "approveAll": "Tout approuver",
-    "suspendAll": "Tout suspendre"
+    "suspendAll": "Tout suspendre",
+    "failedLoad": "Échec du chargement des données",
+    "keyCreated": "Clé API créée",
+    "keyDeleted": "Clé supprimée",
+    "failedCreateKey": "Échec de la création de la clé",
+    "failedDeleteKey": "Échec de la suppression de la clé",
+    "confirmDeleteKey": "Supprimer la clé « {{name}} » ? Les appareils utilisant cette clé cesseront de transmettre.",
+    "deviceApproved": "{{hostname}} approuvé — moniteurs créés",
+    "failedApprove": "Échec de l'approbation de l'appareil",
+    "deviceRefused": "Appareil refusé",
+    "failedRefuse": "Échec du refus de l'appareil",
+    "deviceReinstated": "Appareil rétabli en attente",
+    "failedReinstate": "Échec du rétablissement de l'appareil",
+    "deviceDeleted": "Appareil supprimé",
+    "failedDeleteDevice": "Échec de la suppression de l'appareil",
+    "confirmDeleteDevice": "Supprimer l'appareil « {{hostname}} » et tous ses moniteurs ?",
+    "confirmRefuse": "Refuser l'appareil « {{hostname}} » ? Il passera en mode de recul.",
+    "uninstallQueued": "Commande de désinstallation en file — l'agent se désinstallera au prochain contrôle",
+    "failedUninstall": "Échec de la mise en file de la commande de désinstallation",
+    "confirmUninstall": "Désinstaller l'agent de « {{hostname}} » ? Le service sera arrêté et supprimé. L'appareil sera automatiquement supprimé après 10 minutes.",
+    "agentUpdated": "Agent mis à jour",
+    "failedUpdateAgent": "Échec de la mise à jour de l'agent",
+    "bulkDeleted": "{{count}} appareil(s) supprimé(s)",
+    "failedBulkDelete": "Échec de la suppression des appareils",
+    "confirmBulkDelete": "Supprimer {{count}} appareil(s) et tous leurs moniteurs ? Cette action est irréversible.",
+    "bulkUninstallQueued": "Commande de désinstallation en file pour {{count}} agent(s)",
+    "failedBulkUninstall": "Échec de la mise en file de la désinstallation groupée",
+    "confirmBulkUninstall": "Désinstaller l'agent de {{count}} appareil(s) ? Les services seront arrêtés et supprimés. Les appareils seront automatiquement supprimés après 10 minutes.",
+    "bulkUpdated": "{{count}} agent(s) mis à jour",
+    "failedBulkUpdate": "Échec de la mise à jour des agents",
+    "addAgent": "Ajouter un agent",
+    "addAgentEmpty": "Cliquez sur « Ajouter un agent » pour obtenir la commande d'installation",
+    "apiKeyDescription": "Les clés API sont utilisées pour authentifier les agents lors de l'installation.",
+    "keyNamePlaceholder": "Nom de la clé (ex. Serveurs de production)",
+    "notifType": {
+      "title": "Types de notifications",
+      "desc": "Contrôlez quels types de notifications sont envoyés pour les agents de ce groupe/appareil.",
+      "global": "Global",
+      "globalDesc": "Interrupteur principal — désactiver coupe toutes les notifications (les canaux restent liés)",
+      "down": "Hors ligne",
+      "downDesc": "Notifier quand l'agent se déconnecte",
+      "up": "En ligne",
+      "upDesc": "Notifier quand l'agent récupère",
+      "alert": "Alerte",
+      "alertDesc": "Notifier quand un seuil est dépassé",
+      "update": "Mise à jour",
+      "updateDesc": "Notifier quand l'agent lance une mise à jour automatique"
+    }
   },
   "remediations": {
     "title": "Remédiations",
@@ -701,7 +776,18 @@
     "actionType": "Type d'action",
     "enabledLabel": "Activé",
     "sectionConfig": "Configuration {{type}}",
-    "credentialsNote": "Les identifiants sont stockés chiffrés (AES-256-GCM) sur le serveur."
+    "credentialsNote": "Les identifiants sont stockés chiffrés (AES-256-GCM) sur le serveur.",
+    "removedFromGlobal": "Retiré du global",
+    "addedToGlobal": "Ajouté au global",
+    "failedAddBinding": "Échec de l'ajout de la liaison",
+    "created": "Action créée",
+    "updated": "Action mise à jour",
+    "deleted": "Action supprimée",
+    "failedSave": "Échec de l'enregistrement de l'action",
+    "failedDelete": "Échec de la suppression de l'action",
+    "confirmDelete": "Supprimer cette action de remédiation ? Toutes les liaisons et l'historique seront supprimés.",
+    "failedLoad": "Échec du chargement des actions de remédiation",
+    "actionRequired": "Le nom de l'action est requis"
   },
   "maintenance": {
     "title": "Fenêtres de maintenance",
@@ -826,5 +912,36 @@
     "toggleRole": "Cliquer pour basculer entre admin et membre",
     "roleAdmin": "admin",
     "switchWorkspace": "Changer d'espace de travail"
+  },
+  "settingsPanel": {
+    "failedLoad": "Échec du chargement des paramètres",
+    "saved": "Paramètre enregistré",
+    "failedSave": "Échec de l'enregistrement du paramètre",
+    "resetToInherited": "Réinitialisé à la valeur héritée",
+    "failedReset": "Échec de la réinitialisation du paramètre"
+  },
+  "bulkEdit": {
+    "noFields": "Aucun champ sélectionné pour la mise à jour",
+    "success": "{{count}} moniteur(s) mis à jour",
+    "failed": "Échec de la mise à jour des moniteurs"
+  },
+  "groupTree": {
+    "monitorMoved": "Moniteur déplacé",
+    "failedMoveMonitor": "Échec du déplacement du moniteur",
+    "agentMoved": "Agent déplacé",
+    "failedMoveAgent": "Échec du déplacement de l'agent"
+  },
+  "importExportToast": {
+    "invalidFile": "Fichier d'export invalide — fichier JSON Obliview attendu",
+    "jsonOnly": "Veuillez déposer un fichier .json"
+  },
+  "remediationBindings": {
+    "actionRequired": "Le nom de l'action est requis",
+    "failedAddBinding": "Échec de l'ajout de la liaison",
+    "failedLoad": "Échec du chargement des liaisons de remédiation",
+    "bindingAdded": "Liaison ajoutée",
+    "actionCreatedAndBound": "Action créée et liée",
+    "bindingRemoved": "Liaison supprimée",
+    "actionExcluded": "Action exclue pour cette portée"
   }
 }

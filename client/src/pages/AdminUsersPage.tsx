@@ -102,7 +102,7 @@ export function AdminUsersPage() {
       setTree(tr);
       setMonitors(m);
     } catch {
-      toast.error('Failed to load data');
+      toast.error(t('users.failedLoad'));
     }
   };
 
@@ -195,10 +195,10 @@ export function AdminUsersPage() {
     setSaving(true);
     try {
       await usersApi.changePassword(editingUser.id, formPassword);
-      toast.success('Password changed');
+      toast.success(t('users.passwordChangedToast'));
       resetUserForm();
     } catch {
-      toast.error('Failed to change password');
+      toast.error(t('users.failedChangePasswordToast'));
     } finally {
       setSaving(false);
     }
@@ -306,7 +306,7 @@ export function AdminUsersPage() {
       }
       setTenantDraft(draft);
     } catch {
-      toast.error('Failed to load tenant assignments');
+      toast.error(t('users.failedLoadTenants'));
       setTenantPanelUser(null);
     } finally {
       setTenantPanelLoading(false);
@@ -341,10 +341,10 @@ export function AdminUsersPage() {
         .filter(([, v]) => v.isMember)
         .map(([tenantId, v]) => ({ tenantId: Number(tenantId), role: v.role }));
       await usersApi.setTenants(tenantPanelUser.id, assignments);
-      toast.success('Tenant assignments saved');
+      toast.success(t('users.tenantsSaved'));
       closeTenantPanel();
     } catch {
-      toast.error('Failed to save tenant assignments');
+      toast.error(t('users.failedSaveTenants'));
     } finally {
       setTenantSaving(false);
     }

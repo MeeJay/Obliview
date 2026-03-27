@@ -252,7 +252,7 @@ export function ImportExportPage() {
         setImportSections(new Set(available));
         setImportData(json);
       } catch {
-        toast.error('Invalid export file — expected Obliview JSON export');
+        toast.error(t('importExportToast.invalidFile'));
         setImportFile(null);
         setImportData(null);
         setAvailableSections([]);
@@ -289,7 +289,7 @@ export function ImportExportPage() {
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
     if (!file.name.endsWith('.json') && file.type !== 'application/json') {
-      toast.error('Please drop a .json file');
+      toast.error(t('importExportToast.jsonOnly'));
       return;
     }
     processFile(file);

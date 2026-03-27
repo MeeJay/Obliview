@@ -6,6 +6,7 @@ import { settingsApi } from '@/api/settings.api';
 import { SettingField } from './SettingField';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 
 interface SettingsPanelProps {
   scope: SettingsScope;
@@ -14,6 +15,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ scope, scopeId, title }: SettingsPanelProps) {
+  const { t } = useTranslation();
   const [resolved, setResolved] = useState<ResolvedSettings | null>(null);
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,7 @@ export function SettingsPanel({ scope, scopeId, title }: SettingsPanelProps) {
       setResolved(data.resolved);
       setOverrides(data.overrides);
     } catch {
-      toast.error('Failed to load settings');
+      toast.error(t('settingsPanel.failedLoad'));
     } finally {
       setLoading(false);
     }
@@ -46,10 +48,10 @@ export function SettingsPanel({ scope, scopeId, title }: SettingsPanelProps) {
     const scopeIdStr = scopeId !== null ? String(scopeId) : 'null';
     try {
       await settingsApi.set(scope, scopeIdStr, key, value);
-      toast.success('Setting saved');
+      toast.success(t('settingsPanel.saved'));
       await fetchSettings();
     } catch {
-      toast.error('Failed to save setting');
+      toast.error(t('settingsPanel.failedSave'));
     }
   };
 
@@ -57,10 +59,10 @@ export function SettingsPanel({ scope, scopeId, title }: SettingsPanelProps) {
     const scopeIdStr = scopeId !== null ? String(scopeId) : 'null';
     try {
       await settingsApi.remove(scope, scopeIdStr, key);
-      toast.success('Reset to inherited');
+      toast.success(t('settingsPanel.resetToInherited'));
       await fetchSettings();
     } catch {
-      toast.error('Failed to reset setting');
+      toast.error(t('settingsPanel.failedReset'));
     }
   };
 

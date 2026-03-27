@@ -321,9 +321,9 @@ export function Sidebar() {
       try {
         await agentApi.updateDevice(device.id, { groupId: targetGroupId });
         loadDevices();
-        toast.success('Agent moved');
+        toast.success(t('groupTree.agentMoved'));
       } catch {
-        toast.error('Failed to move agent');
+        toast.error(t('groupTree.failedMoveAgent'));
       }
     },
     [loadDevices],

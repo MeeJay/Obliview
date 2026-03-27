@@ -343,7 +343,7 @@ function GlobalBindingsPanel({ actions }: { actions: RemediationAction[] }) {
       const b = bindings.find(b => b.actionId === actionId)!;
       await remediationApi.deleteBinding(b.id);
       setBindings(prev => prev.filter(b => b.actionId !== actionId));
-      toast.success('Removed from global');
+      toast.success(t('remediations.removedFromGlobal'));
     } else {
       setAddingId(actionId);
       try {
@@ -351,8 +351,8 @@ function GlobalBindingsPanel({ actions }: { actions: RemediationAction[] }) {
           actionId, scope: 'global', overrideMode: 'merge', triggerOn: 'down', cooldownSeconds: 300,
         });
         setBindings(prev => [...prev, nb]);
-        toast.success('Added to global');
-      } catch { toast.error('Failed to add binding'); }
+        toast.success(t('remediations.addedToGlobal'));
+      } catch { toast.error(t('remediations.failedAddBinding')); }
       finally { setAddingId(null); }
     }
   };
@@ -424,7 +424,7 @@ export function AdminRemediationsPage() {
       const a = await remediationApi.listActions();
       setActions(a);
     } catch {
-      toast.error('Failed to load remediation actions');
+      toast.error(t('remediations.failedLoad'));
     } finally {
       setLoading(false);
     }
@@ -440,27 +440,27 @@ export function AdminRemediationsPage() {
       if (editing) {
         const updated = await remediationApi.updateAction(editing.id, { name, config, enabled });
         setActions(prev => prev.map(a => a.id === editing.id ? updated : a));
-        toast.success('Action updated');
+        toast.success(t('remediations.updated'));
       } else {
         const created = await remediationApi.createAction({ name, type, config, enabled });
         setActions(prev => [...prev, created]);
-        toast.success('Action created');
+        toast.success(t('remediations.created'));
       }
       setShowModal(false);
     } catch {
-      toast.error('Failed to save action');
+      toast.error(t('remediations.failedSave'));
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this remediation action? All bindings and run history will be removed.')) return;
+    if (!window.confirm(t('remediations.confirmDelete'))) return;
     setDeleting(id);
     try {
       await remediationApi.deleteAction(id);
       setActions(prev => prev.filter(a => a.id !== id));
-      toast.success('Action deleted');
+      toast.success(t('remediations.deleted'));
     } catch {
-      toast.error('Failed to delete action');
+      toast.error(t('remediations.failedDelete'));
     } finally {
       setDeleting(null);
     }

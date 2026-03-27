@@ -507,7 +507,7 @@ export function AdminAgentPage() {
       setKeys(k);
       setDevices(d);
     } catch {
-      toast.error('Failed to load agent data');
+      toast.error(t('agents.failedLoad'));
     }
   }, []);
 
@@ -627,25 +627,25 @@ export function AdminAgentPage() {
     setSaving(true);
     try {
       await agentApi.createKey(newKeyName.trim());
-      toast.success('API Key created');
+      toast.success(t('agents.keyCreated'));
       setNewKeyName('');
       setShowCreateKey(false);
       loadAll();
     } catch {
-      toast.error('Failed to create key');
+      toast.error(t('agents.failedCreateKey'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteKey = async (key: AgentApiKey) => {
-    if (!confirm(`Delete key "${key.name}"? Devices using this key will stop pushing.`)) return;
+    if (!confirm(t('agents.confirmDeleteKey', { name: key.name }))) return;
     try {
       await agentApi.deleteKey(key.id);
-      toast.success('Key deleted');
+      toast.success(t('agents.keyDeleted'));
       loadAll();
     } catch {
-      toast.error('Failed to delete key');
+      toast.error(t('agents.failedDeleteKey'));
     }
   };
 
@@ -655,59 +655,55 @@ export function AdminAgentPage() {
     if (!approvingDevice) return;
     try {
       await agentApi.updateDevice(approvingDevice.id, { status: 'approved', groupId });
-      toast.success(`${approvingDevice.hostname} approved — monitors created`);
+      toast.success(t('agents.deviceApproved', { hostname: approvingDevice.hostname }));
       setApprovingDevice(null);
       loadAll();
     } catch {
-      toast.error('Failed to approve device');
+      toast.error(t('agents.failedApprove'));
     }
   };
 
   const handleRefuse = async (device: AgentDevice) => {
-    if (!confirm(`Refuse device "${device.hostname}"? It will enter backoff mode.`)) return;
+    if (!confirm(t('agents.confirmRefuse', { hostname: device.hostname }))) return;
     try {
       await agentApi.updateDevice(device.id, { status: 'refused' });
-      toast.success('Device refused');
+      toast.success(t('agents.deviceRefused'));
       loadAll();
     } catch {
-      toast.error('Failed to refuse device');
+      toast.error(t('agents.failedRefuse'));
     }
   };
 
   const handleReinstate = async (device: AgentDevice) => {
     try {
       await agentApi.updateDevice(device.id, { status: 'pending' });
-      toast.success('Device reinstated to pending');
+      toast.success(t('agents.deviceReinstated'));
       loadAll();
     } catch {
-      toast.error('Failed to reinstate device');
+      toast.error(t('agents.failedReinstate'));
     }
   };
 
   const handleDeleteDevice = async (device: AgentDevice) => {
-    if (!confirm(`Delete device "${device.hostname}" and all its monitors?`)) return;
+    if (!confirm(t('agents.confirmDeleteDevice', { hostname: device.hostname }))) return;
     try {
       await agentApi.deleteDevice(device.id);
-      toast.success('Device deleted');
+      toast.success(t('agents.deviceDeleted'));
       setSelectedIds(prev => { const next = new Set(prev); next.delete(device.id); return next; });
       loadAll();
     } catch {
-      toast.error('Failed to delete device');
+      toast.error(t('agents.failedDeleteDevice'));
     }
   };
 
   /** Send an uninstall command to a single device. */
   const handleUninstallDevice = async (device: AgentDevice) => {
-    if (!confirm(
-      `Uninstall agent on "${device.name ?? device.hostname}"?\n\n` +
-      `The command will be sent on the agent's next push. The service will be removed from the machine. ` +
-      `The device entry will be automatically deleted a few minutes after uninstall.`,
-    )) return;
+    if (!confirm(t('agents.confirmUninstall', { hostname: device.name ?? device.hostname }))) return;
     try {
       await agentApi.sendCommand(device.id, 'uninstall');
-      toast.success(`Uninstall command queued for ${device.name ?? device.hostname}`);
+      toast.success(t('agents.uninstallQueued'));
     } catch {
-      toast.error('Failed to queue uninstall command');
+      toast.error(t('agents.failedUninstall'));
     }
   };
 
@@ -730,11 +726,11 @@ export function AdminAgentPage() {
         overrideGroupSettings: data.overrideGroupSettings,
         ...(newStatus ? { status: newStatus } : {}),
       });
-      toast.success('Agent updated');
+      toast.success(t('agents.agentUpdated'));
       setEditingDevice(null);
       loadAll();
     } catch {
-      toast.error('Failed to update agent');
+      toast.error(t('agents.failedUpdateAgent'));
     }
   };
 
@@ -744,30 +740,26 @@ export function AdminAgentPage() {
 
   const handleBulkDelete = async () => {
     const count = selectedIds.size;
-    if (!confirm(`Delete ${count} device${count !== 1 ? 's' : ''} and all their monitors? This cannot be undone.`)) return;
+    if (!confirm(t('agents.confirmBulkDelete', { count }))) return;
     try {
       await agentApi.bulkDeleteDevices([...selectedIds]);
-      toast.success(`${count} device${count !== 1 ? 's' : ''} deleted`);
+      toast.success(t('agents.bulkDeleted', { count }));
       setSelectedIds(new Set());
       loadAll();
     } catch {
-      toast.error('Failed to delete devices');
+      toast.error(t('agents.failedBulkDelete'));
     }
   };
 
   const handleBulkUninstall = async () => {
     const count = selectedIds.size;
-    if (!confirm(
-      `Send uninstall command to ${count} agent${count !== 1 ? 's' : ''}?\n\n` +
-      `Each agent will uninstall itself on its next push. ` +
-      `Device entries will be automatically deleted a few minutes after uninstall.`,
-    )) return;
+    if (!confirm(t('agents.confirmBulkUninstall', { count }))) return;
     try {
       await agentApi.bulkSendCommand([...selectedIds], 'uninstall');
-      toast.success(`Uninstall command queued for ${count} agent${count !== 1 ? 's' : ''}`);
+      toast.success(t('agents.bulkUninstallQueued', { count }));
       setSelectedIds(new Set());
     } catch {
-      toast.error('Failed to queue bulk uninstall command');
+      toast.error(t('agents.failedBulkUninstall'));
     }
   };
 
@@ -780,12 +772,12 @@ export function AdminAgentPage() {
     const count = selectedIds.size;
     try {
       await agentApi.bulkUpdateDevices([...selectedIds], data);
-      toast.success(`${count} agent${count !== 1 ? 's' : ''} updated`);
+      toast.success(t('agents.bulkUpdated', { count }));
       setShowBulkEditModal(false);
       setSelectedIds(new Set());
       loadAll();
     } catch {
-      toast.error('Failed to update agents');
+      toast.error(t('agents.failedBulkUpdate'));
     }
   };
 
@@ -811,7 +803,7 @@ export function AdminAgentPage() {
             <RefreshCw size={14} />
           </button>
           <Button onClick={openAddAgentModal}>
-            <Plus size={14} className="mr-1.5" />Add Agent
+            <Plus size={14} className="mr-1.5" />{t('agents.addAgent')}
           </Button>
         </div>
       </div>
@@ -905,7 +897,7 @@ export function AdminAgentPage() {
                 </p>
                 {deviceFilter === 'pending' && (
                   <p className="text-xs text-text-muted mt-1">
-                    Click "Add Agent" to get the installation command
+                    {t('agents.addAgentEmpty')}
                   </p>
                 )}
               </div>
@@ -1053,7 +1045,7 @@ export function AdminAgentPage() {
       {tab === 'keys' && (
         <>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-text-muted">API Keys are used to authenticate agents during installation.</p>
+            <p className="text-sm text-text-muted">{t('agents.apiKeyDescription')}</p>
             <Button size="sm" onClick={() => setShowCreateKey(true)}>
               <Plus size={13} className="mr-1" />{t('common.new')} Key
             </Button>
@@ -1065,7 +1057,7 @@ export function AdminAgentPage() {
               <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">{t('common.new')} API Key</h3>
               <div className="flex gap-2">
                 <Input
-                  placeholder="Key name (e.g. Production Servers)"
+                  placeholder={t('agents.keyNamePlaceholder')}
                   value={newKeyName}
                   onChange={e => setNewKeyName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleCreateKey()}

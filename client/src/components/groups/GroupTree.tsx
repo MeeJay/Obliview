@@ -20,6 +20,7 @@ import { anonymize } from '@/utils/anonymize';
 import { estimateMaxBars } from '@/components/monitors/HeartbeatBar';
 import { monitorsApi } from '@/api/monitors.api';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import type { Monitor } from '@obliview/shared';
 
 interface GroupTreeProps {
@@ -29,6 +30,7 @@ interface GroupTreeProps {
 }
 
 export function GroupTree({ selectedGroupId, onSelectGroup, searchQuery = '' }: GroupTreeProps) {
+  const { t } = useTranslation();
   const { tree, fetchTree, fetchGroupStats } = useGroupStore();
   const { getMonitorsByGroup, fetchSummary, fetchAllHeartbeats, getMonitorSummary, updateMonitor } = useMonitorStore();
   const { canCreate: canCreateCheck } = useAuthStore();
@@ -97,9 +99,9 @@ export function GroupTree({ selectedGroupId, onSelectGroup, searchQuery = '' }: 
       await monitorsApi.update(monitorId, { groupId: targetGroupId });
       updateMonitor(monitorId, { groupId: targetGroupId });
       fetchTree();
-      toast.success('Monitor moved');
+      toast.success(t('groupTree.monitorMoved'));
     } catch {
-      toast.error('Failed to move monitor');
+      toast.error(t('groupTree.failedMoveMonitor'));
     }
   };
 

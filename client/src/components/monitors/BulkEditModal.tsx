@@ -11,6 +11,7 @@ import { Input } from '@/components/common/Input';
 import { GroupPicker } from '@/components/common/GroupPicker';
 import { Checkbox } from '@/components/ui/Checkbox';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/utils/cn';
 
 interface FieldState<T> {
@@ -79,6 +80,7 @@ function FieldRow({
 }
 
 export function BulkEditModal({ monitorIds, isAgentSelection, onClose }: BulkEditModalProps) {
+  const { t } = useTranslation();
   const { tree } = useGroupStore();
   const agentGroupTree = tree.filter((node) => node.kind === 'agent');
   const monitorGroupTree = tree.filter((node) => node.kind === 'monitor');
@@ -122,7 +124,7 @@ export function BulkEditModal({ monitorIds, isAgentSelection, onClose }: BulkEdi
       timingOverrides.push({ key: 'max_retries', value: parseInt(form.maxRetries.value, 10) });
 
     if (Object.keys(directChanges).length === 0 && timingOverrides.length === 0) {
-      toast.error('No fields selected to update');
+      toast.error(t('bulkEdit.noFields'));
       return;
     }
 
@@ -145,10 +147,10 @@ export function BulkEditModal({ monitorIds, isAgentSelection, onClose }: BulkEdi
       }
 
       await Promise.all(promises);
-      toast.success(`${monitorIds.length} ${isAgentSelection ? 'agent' : 'monitor'}${monitorIds.length > 1 ? 's' : ''} updated`);
+      toast.success(t('bulkEdit.success', { count: monitorIds.length }));
       onClose();
     } catch {
-      toast.error('Failed to update monitors');
+      toast.error(t('bulkEdit.failed'));
     } finally {
       setSaving(false);
     }

@@ -100,7 +100,7 @@ export function SettingsPage() {
     try {
       const trimmedUrl = obligateUrl.trim().replace(/\/$/, '');
       if (trimmedUrl && trimmedUrl === window.location.origin.replace(/\/$/, '')) {
-        toast.error('Obligate URL cannot point to this application. Enter the URL of your Obligate SSO gateway.');
+        toast.error(t('settings.obligate.selfUrlError'));
         return;
       }
       const patch: { url?: string | null; apiKey?: string | null; enabled?: boolean } = { url: trimmedUrl || null };
@@ -108,9 +108,9 @@ export function SettingsPage() {
       const updated = await appConfigApi.patchObligateConfig(patch);
       setObligateCfg(updated);
       setObligateApiKey('');
-      toast.success('Obligate configuration saved');
+      toast.success(t('settings.obligate.saved'));
     } catch {
-      toast.error('Failed to save Obligate configuration');
+      toast.error(t('settings.obligate.failedSave'));
     }
   }
 
@@ -173,7 +173,7 @@ export function SettingsPage() {
   }
 
   async function handleDelete(server: SmtpServer) {
-    if (!confirm(`Delete SMTP server "${server.name}"?`)) return;
+    if (!confirm(t('settings.confirmDeleteSmtp', { name: server.name }))) return;
     try {
       await smtpServerApi.delete(server.id);
       setServers((prev) => prev.filter((s) => s.id !== server.id));
@@ -482,7 +482,7 @@ export function SettingsPage() {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <ArrowLeftRight size={16} className="text-text-muted" />
-              <h2 className="text-lg font-semibold text-text-primary">Obligate SSO Gateway</h2>
+              <h2 className="text-lg font-semibold text-text-primary">{t('settings.obligate.title')}</h2>
             </div>
             <div className="rounded-lg border border-border bg-bg-secondary p-5 space-y-4">
               <p className="text-sm text-text-muted">
@@ -494,14 +494,14 @@ export function SettingsPage() {
 
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <label className="text-sm font-medium text-text-secondary">Obligate URL</label>
+                  <label className="text-sm font-medium text-text-secondary">{t('settings.obligate.urlLabel')}</label>
                   {obligateCfg?.url && (
                     <a href={obligateCfg.url} target="_blank" rel="noopener noreferrer" className="text-xs text-accent hover:underline">Open ↗</a>
                   )}
                 </div>
                 <input
                   type="url"
-                  placeholder="https://obligate.example.com"
+                  placeholder={t('settings.obligate.urlPlaceholder')}
                   value={obligateUrl}
                   onChange={(e) => setObligateUrl(e.target.value)}
                   onBlur={() => void saveObligateConfig()}
@@ -511,7 +511,7 @@ export function SettingsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">
-                  API Key
+                  {t('settings.obligate.apiKeyLabel')}
                   {obligateCfg?.apiKeySet && (
                     <span className="ml-2 text-[10px] font-semibold rounded px-1.5 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20">SET</span>
                   )}
@@ -520,7 +520,7 @@ export function SettingsPage() {
                   <div className="relative flex-1">
                     <input
                       type={showObligateKey ? 'text' : 'password'}
-                      placeholder={obligateCfg?.apiKeySet ? '••••••••••••••••••••••••••••••••••••' : 'Paste the API key from Obligate…'}
+                      placeholder={obligateCfg?.apiKeySet ? '••••••••••••••••••••••••••••••••••••' : t('settings.obligate.apiKeyPlaceholder')}
                       value={obligateApiKey}
                       onChange={(e) => setObligateApiKey(e.target.value)}
                       onBlur={() => { if (obligateApiKey.trim()) void saveObligateConfig(); }}
@@ -545,10 +545,9 @@ export function SettingsPage() {
                 <div className="pt-4 border-t border-border mt-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-medium text-text-primary">Enable SSO</p>
+                      <p className="text-sm font-medium text-text-primary">{t('settings.obligate.enableSso')}</p>
                       <p className="text-xs text-text-muted mt-0.5">
-                        When enabled, the login page redirects to Obligate for authentication.
-                        Users are auto-provisioned on first login. Cross-app navigation buttons appear in the header.
+                        {t('settings.obligate.enableSsoDesc')}
                       </p>
                     </div>
                     <button

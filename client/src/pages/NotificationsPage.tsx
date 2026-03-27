@@ -195,7 +195,7 @@ export function NotificationsPage() {
       setPlugins(pl);
       setGlobalBindings(gb);
     } catch {
-      toast.error('Failed to load notifications');
+      toast.error(t('notifications.failedLoad'));
     }
   };
 

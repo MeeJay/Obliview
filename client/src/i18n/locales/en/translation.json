@@ -521,12 +521,29 @@
     "selectTenant": "— Select workspace —",
     "grantAccess": "Grant access",
     "removeTenantAccess": "Remove workspace access",
-    "failedTenantAssign": "Failed to update workspace access"
+    "failedTenantAssign": "Failed to update workspace access",
+    "failedLoad": "Failed to load notifications",
+    "bindingAdded": "Binding added",
+    "bindingRemoved": "Binding removed",
+    "channelExcluded": "Channel excluded",
+    "failedAddBinding": "Failed to add binding",
+    "failedRemoveBinding": "Failed to remove binding",
+    "failedExcludeBinding": "Failed to exclude channel"
   },
   "settings": {
     "obligate": {
+      "title": "Obligate SSO Gateway",
       "description": "Connect this app to your Obligate SSO gateway for centralized authentication and cross-app navigation. Register this app in Obligate first, then paste the API key here.",
-      "warning": "When enabled, local authentication is disabled. Users must sign in through the Obligate gateway. If the gateway becomes unreachable, local authentication is automatically restored as a fallback."
+      "warning": "When enabled, local authentication is disabled. Users must sign in through the Obligate gateway. If the gateway becomes unreachable, local authentication is automatically restored as a fallback.",
+      "urlLabel": "Obligate URL",
+      "urlPlaceholder": "https://sso.example.com",
+      "apiKeyLabel": "API Key",
+      "apiKeyPlaceholder": "Paste the key from Obligate → Connected Apps → Add App",
+      "enableSso": "Enable SSO",
+      "enableSsoDesc": "When enabled, the login page redirects to Obligate for authentication. Local login becomes a fallback if the gateway is unreachable.",
+      "saved": "Obligate configuration saved",
+      "failedSave": "Failed to save Obligate configuration",
+      "selfUrlError": "Obligate URL cannot point to this application — it must point to the Obligate gateway."
     },
     "title": "Global Settings",
     "globalDesc": "These defaults apply to all groups and monitors unless overridden at a lower level.",
@@ -584,7 +601,8 @@
       "otpSmtpDesc": "Used to send one-time codes when Email OTP is enabled.",
       "noneOption": "— None —"
     },
-    "failedUpdate": "Failed to update setting"
+    "failedUpdate": "Failed to update setting",
+    "confirmDeleteSmtp": "Delete SMTP server \"{{name}}\"?"
   },
   "profile": {
     "title": "My Profile",
@@ -599,6 +617,10 @@
     "saveProfile": "Save Profile",
     "profileUpdated": "Profile updated",
     "failedProfile": "Failed to update profile",
+    "managedByObligate": "Profile managed by Obligate",
+    "managedByObligateDesc": "Your profile, password, and preferences are managed centrally through Obligate SSO.",
+    "openObligateProfile": "Open Obligate Profile",
+    "ssoLabel": "SSO",
     "appearance": {
       "title": "Appearance",
       "subtitle": "Select the visual theme for your interface.",
@@ -675,6 +697,12 @@
     "failedCreate": "Failed to create user",
     "failedUpdate": "Failed to update user",
     "failedDelete": "Failed to delete user",
+    "failedLoad": "Failed to load data",
+    "passwordChangedToast": "Password changed",
+    "failedChangePasswordToast": "Failed to change password",
+    "failedLoadTenants": "Failed to load tenant assignments",
+    "tenantsSaved": "Tenant assignments saved",
+    "failedSaveTenants": "Failed to save tenant assignments",
     "confirmDelete": "Delete user \"{{username}}\"?",
     "changePasswordTitle": "Password: {{username}}",
     "newPassword": "New Password",
@@ -736,6 +764,39 @@
     "noChange": "— No change —",
     "approveAll": "Approve all",
     "suspendAll": "Suspend all",
+    "failedLoad": "Failed to load agent data",
+    "keyCreated": "API Key created",
+    "keyDeleted": "Key deleted",
+    "failedCreateKey": "Failed to create key",
+    "failedDeleteKey": "Failed to delete key",
+    "confirmDeleteKey": "Delete key \"{{name}}\"? Devices using this key will stop pushing.",
+    "deviceApproved": "{{hostname}} approved — monitors created",
+    "failedApprove": "Failed to approve device",
+    "deviceRefused": "Device refused",
+    "failedRefuse": "Failed to refuse device",
+    "deviceReinstated": "Device reinstated to pending",
+    "failedReinstate": "Failed to reinstate device",
+    "deviceDeleted": "Device deleted",
+    "failedDeleteDevice": "Failed to delete device",
+    "confirmDeleteDevice": "Delete device \"{{hostname}}\" and all its monitors?",
+    "confirmRefuse": "Refuse device \"{{hostname}}\"? It will enter backoff mode.",
+    "uninstallQueued": "Uninstall command queued — agent will uninstall on next check",
+    "failedUninstall": "Failed to queue uninstall command",
+    "confirmUninstall": "Uninstall the agent from \"{{hostname}}\"? The service will be stopped and removed. The device record will be automatically deleted after 10 minutes.",
+    "agentUpdated": "Agent updated",
+    "failedUpdateAgent": "Failed to update agent",
+    "bulkDeleted": "{{count}} device(s) deleted",
+    "failedBulkDelete": "Failed to delete devices",
+    "confirmBulkDelete": "Delete {{count}} device(s) and all their monitors? This cannot be undone.",
+    "bulkUninstallQueued": "Uninstall command queued for {{count}} agent(s)",
+    "failedBulkUninstall": "Failed to queue bulk uninstall command",
+    "confirmBulkUninstall": "Uninstall the agent from {{count}} device(s)? Services will be stopped and removed. Device records will be automatically deleted after 10 minutes.",
+    "bulkUpdated": "{{count}} agent(s) updated",
+    "failedBulkUpdate": "Failed to update agents",
+    "addAgent": "Add Agent",
+    "addAgentEmpty": "Click \"Add Agent\" to get the installation command",
+    "apiKeyDescription": "API Keys are used to authenticate agents during installation.",
+    "keyNamePlaceholder": "Key name (e.g. Production Servers)",
     "notifType": {
       "title": "Notification Types",
       "desc": "Control which kinds of notifications are sent for agents in this group/device.",
@@ -775,7 +836,18 @@
     "actionType": "Action Type",
     "enabledLabel": "Enabled",
     "sectionConfig": "{{type}} Configuration",
-    "credentialsNote": "Credentials are stored encrypted (AES-256-GCM) on the server."
+    "credentialsNote": "Credentials are stored encrypted (AES-256-GCM) on the server.",
+    "removedFromGlobal": "Removed from global",
+    "addedToGlobal": "Added to global",
+    "failedAddBinding": "Failed to add binding",
+    "created": "Action created",
+    "updated": "Action updated",
+    "deleted": "Action deleted",
+    "failedSave": "Failed to save action",
+    "failedDelete": "Failed to delete action",
+    "confirmDelete": "Delete this remediation action? All bindings and run history will be removed.",
+    "failedLoad": "Failed to load remediation actions",
+    "actionRequired": "Action name is required"
   },
   "maintenance": {
     "title": "Maintenance Windows",
@@ -973,5 +1045,36 @@
     "toggleRole": "Click to toggle admin / member role",
     "roleAdmin": "admin",
     "switchWorkspace": "Switch workspace"
+  },
+  "settingsPanel": {
+    "failedLoad": "Failed to load settings",
+    "saved": "Setting saved",
+    "failedSave": "Failed to save setting",
+    "resetToInherited": "Reset to inherited",
+    "failedReset": "Failed to reset setting"
+  },
+  "bulkEdit": {
+    "noFields": "No fields selected to update",
+    "success": "{{count}} monitor(s) updated",
+    "failed": "Failed to update monitors"
+  },
+  "groupTree": {
+    "monitorMoved": "Monitor moved",
+    "failedMoveMonitor": "Failed to move monitor",
+    "agentMoved": "Agent moved",
+    "failedMoveAgent": "Failed to move agent"
+  },
+  "importExportToast": {
+    "invalidFile": "Invalid export file — expected Obliview JSON export",
+    "jsonOnly": "Please drop a .json file"
+  },
+  "remediationBindings": {
+    "actionRequired": "Action name is required",
+    "failedAddBinding": "Failed to add binding",
+    "failedLoad": "Failed to load remediation bindings",
+    "bindingAdded": "Binding added",
+    "actionCreatedAndBound": "Action created and bound",
+    "bindingRemoved": "Binding removed",
+    "actionExcluded": "Action excluded at this scope"
   }
 }

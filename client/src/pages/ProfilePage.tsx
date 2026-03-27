@@ -167,9 +167,9 @@ export function ProfilePage() {
     return (
       <div className="p-6 max-w-2xl mx-auto">
         <div className="bg-bg-secondary border border-border rounded-lg p-6 text-center">
-          <h2 className="text-lg font-medium text-text-primary mb-2">Profile managed by Obligate</h2>
+          <h2 className="text-lg font-medium text-text-primary mb-2">{t('profile.managedByObligate')}</h2>
           <p className="text-sm text-text-secondary mb-4">
-            Your profile, password, and preferences are managed centrally through Obligate SSO.
+            {t('profile.managedByObligateDesc')}
           </p>
           <a
             href={`${obligateUrl}/account`}
@@ -177,7 +177,7 @@ export function ProfilePage() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-md font-medium text-sm transition-colors"
           >
-            Open Obligate Profile
+            {t('profile.openObligateProfile')}
           </a>
         </div>
       </div>
@@ -206,7 +206,7 @@ export function ProfilePage() {
               </p>
               {sessionUser?.foreignSource && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#1e1b4b]/60 border border-[#4338ca]/40 px-2 py-1 text-[10px] font-medium text-[#a5b4fc] shrink-0">
-                  <ArrowLeftRight size={9} />SSO · {sessionUser.foreignSource}
+                  <ArrowLeftRight size={9} />{t('profile.ssoLabel', { foreignSource: sessionUser.foreignSource })}
                 </span>
               )}
             </div>

@@ -5,6 +5,7 @@ import { cn } from '@/utils/cn';
 import { anonymize } from '@/utils/anonymize';
 import type { NotificationChannel, OverrideMode } from '@obliview/shared';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 
 interface ResolvedBinding {
   channelId: number;
@@ -24,6 +25,7 @@ interface NotificationBindingsPanelProps {
 }
 
 export function NotificationBindingsPanel({ scope, scopeId, title }: NotificationBindingsPanelProps) {
+  const { t } = useTranslation();
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [resolved, setResolved] = useState<ResolvedBinding[]>([]);
   const [directBindings, setDirectBindings] = useState<Map<number, OverrideMode>>(new Map());
@@ -64,10 +66,10 @@ export function NotificationBindingsPanel({ scope, scopeId, title }: Notificatio
   const bindChannel = async (channelId: number) => {
     try {
       await notificationsApi.addBinding(channelId, scope, scopeId, overrideMode);
-      toast.success('Binding added');
+      toast.success(t('notifications.bindingAdded'));
       await loadData();
     } catch {
-      toast.error('Failed to add binding');
+      toast.error(t('notifications.failedAddBinding'));
     }
   };
 
@@ -75,10 +77,10 @@ export function NotificationBindingsPanel({ scope, scopeId, title }: Notificatio
   const removeDirectBinding = async (channelId: number) => {
     try {
       await notificationsApi.removeBinding(channelId, scope, scopeId);
-      toast.success('Binding removed');
+      toast.success(t('notifications.bindingRemoved'));
       await loadData();
     } catch {
-      toast.error('Failed to remove binding');
+      toast.error(t('notifications.failedRemoveBinding'));
     }
   };
 
@@ -86,10 +88,10 @@ export function NotificationBindingsPanel({ scope, scopeId, title }: Notificatio
   const excludeChannel = async (channelId: number) => {
     try {
       await notificationsApi.addBinding(channelId, scope, scopeId, 'exclude');
-      toast.success('Channel excluded');
+      toast.success(t('notifications.channelExcluded'));
       await loadData();
     } catch {
-      toast.error('Failed to exclude channel');
+      toast.error(t('notifications.failedExcludeBinding'));
     }
   };
 

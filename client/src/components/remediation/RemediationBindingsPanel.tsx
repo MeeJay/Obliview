@@ -16,6 +16,7 @@ import type {
 import { remediationApi } from '../../api/remediation.api';
 import { cn } from '../../utils/cn';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -251,6 +252,7 @@ function AddBindingModal({
   onAddWithNew: (name: string, type: RemediationActionType, config: AnyConfig, triggerOn: RemediationTrigger, overrideMode: OverrideModeR, cooldownSeconds: number) => Promise<unknown>;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   // Tab: 'select' = pick existing action, 'create' = inline action creation
   const [tab, setTab] = useState<'select' | 'create'>(actions.length === 0 ? 'create' : 'select');
 
@@ -275,12 +277,12 @@ function AddBindingModal({
         if (!selectedId) return;
         await onAdd(selectedId, triggerOn, overrideMode, cooldown);
       } else {
-        if (!newName.trim()) { toast.error('Action name is required'); setSaving(false); return; }
+        if (!newName.trim()) { toast.error(t('remediationBindings.actionRequired')); setSaving(false); return; }
         await onAddWithNew(newName.trim(), newType, newConfig, triggerOn, overrideMode, cooldown);
       }
       onClose();
     } catch {
-      toast.error('Failed to add binding');
+      toast.error(t('remediationBindings.failedAddBinding'));
     } finally {
       setSaving(false);
     }
@@ -480,6 +482,7 @@ export function RemediationBindingsPanel({
   groupId?: number | null;
   title?: string;
 }) {
+  const { t } = useTranslation();
   const [resolved, setResolved]     = useState<ResolvedEntry[]>([]);
   const [allActions, setAllActions] = useState<RemediationAction[]>([]);
   const [directMap, setDirectMap]   = useState<Map<number, RemediationBinding>>(new Map());
@@ -505,7 +508,7 @@ export function RemediationBindingsPanel({
       const replaceBinding = direct.find(b => b.overrideMode === 'replace');
       setOverrideMode(replaceBinding ? 'replace' : 'merge');
     } catch {
-      toast.error('Failed to load remediation bindings');
+      toast.error(t('remediationBindings.failedLoad'));
     } finally {
       setLoading(false);
     }
@@ -528,7 +531,7 @@ export function RemediationBindingsPanel({
       cooldownSeconds,
     });
     await load();
-    toast.success('Binding added');
+    toast.success(t('remediationBindings.bindingAdded'));
     return binding;
   };
 
@@ -552,7 +555,7 @@ export function RemediationBindingsPanel({
       cooldownSeconds,
     });
     await load();
-    toast.success('Action created and bound');
+    toast.success(t('remediationBindings.actionCreatedAndBound'));
     return binding;
   };
 
@@ -561,7 +564,7 @@ export function RemediationBindingsPanel({
     if (!b) return;
     await remediationApi.deleteBinding(b.id);
     await load();
-    toast.success('Binding removed');
+    toast.success(t('remediationBindings.bindingRemoved'));
   };
 
   const handleExclude = async (actionId: number) => {
@@ -571,7 +574,7 @@ export function RemediationBindingsPanel({
       triggerOn: 'both', cooldownSeconds: 0,
     });
     await load();
-    toast.success('Action excluded at this scope');
+    toast.success(t('remediationBindings.actionExcluded'));
   };
 
   const handleToggleOverrideMode = async () => {
