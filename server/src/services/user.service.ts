@@ -11,6 +11,7 @@ interface UserRow {
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
+  foreign_source: string | null;
 }
 
 function rowToUser(row: UserRow): User {
@@ -24,6 +25,7 @@ function rowToUser(row: UserRow): User {
     updatedAt: row.updated_at.toISOString(),
     preferredLanguage: 'en',
     enrollmentVersion: 0,
+    foreignSource: row.foreign_source ?? null,
   };
 }
 
