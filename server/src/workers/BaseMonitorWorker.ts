@@ -48,10 +48,14 @@ export abstract class BaseMonitorWorker {
   protected previousStatus: MonitorStatus = 'pending';
   /** The last status that was officially confirmed and notified (survives retries) */
   protected confirmedStatus: MonitorStatus = 'pending';
-  /** Unix-ms timestamp of the last problem notification sent (for cooldown check) */
-  protected lastProblemNotifiedAt: number = 0;
-  /** True when the last problem notification was suppressed by cooldown */
-  protected lastProblemSuppressed: boolean = false;
+  /** Unix-ms timestamp of the last notification sent (for cooldown) */
+  protected lastNotifiedAt: number = 0;
+  /** The status that was last actually notified to the user */
+  protected lastNotifiedStatus: MonitorStatus = 'pending';
+  /** Unix-ms timestamp of the last confirmed status change (for debounce) */
+  protected lastStateChangeAt: number = 0;
+  /** Pending notification queued during cooldown (sent when state is stable for cooldown duration) */
+  protected pendingNotification: { status: MonitorStatus; message?: string; inMaintenance?: boolean } | null = null;
   /** Tenant ID for scoped Socket.io room emissions (null until resolved) */
   protected tenantId: number | null = null;
   /**
@@ -264,6 +268,9 @@ export abstract class BaseMonitorWorker {
       this.previousStatus = result.status;
       this.isFirstBeat = false;
 
+      // 2b. Flush pending debounced notification if state has been stable long enough
+      await this.flushPendingNotification();
+
       // 3. Update monitor status in DB
       // For agent monitors on the startup beat, skip writing 'down' to the DB.
       // agentPushData is empty right after restart, so the first worker check
@@ -306,6 +313,40 @@ export abstract class BaseMonitorWorker {
     }
   }
 
+  /**
+   * Check if a debounced notification is ready to fire.
+   * Called on every beat — sends the pending notification only when the state
+   * has been stable (no handleStatusChange calls) for the full cooldown period.
+   */
+  private async flushPendingNotification(): Promise<void> {
+    if (!this.pendingNotification) return;
+    const cooldownMs = (this.config.notificationCooldownSeconds ?? 0) * 1000;
+    if (cooldownMs <= 0) return;
+    const elapsed = Date.now() - this.lastStateChangeAt;
+    if (elapsed < cooldownMs) return; // still in debounce window
+
+    // State has been stable for the full cooldown — send the queued notification
+    const pending = this.pendingNotification;
+    this.pendingNotification = null;
+
+    // Skip if the pending status is the same as what we last notified
+    if (pending.status === this.lastNotifiedStatus) {
+      logger.info(
+        `Monitor "${this.config.name}" (id: ${this.config.id}): ` +
+        `pending notification discarded — status unchanged (${pending.status})`,
+      );
+      return;
+    }
+
+    logger.info(
+      `Monitor "${this.config.name}" (id: ${this.config.id}): ` +
+      `flushing debounced notification: ${this.lastNotifiedStatus} → ${pending.status} (stable for ${Math.round(elapsed / 1000)}s)`,
+    );
+    this.lastNotifiedAt = Date.now();
+    this.lastNotifiedStatus = pending.status;
+    await this.dispatchNotification(this.confirmedStatus, pending.status, pending.message, pending.inMaintenance);
+  }
+
   private async handleStatusChange(newStatus: MonitorStatus, message?: string, inMaintenance?: boolean): Promise<void> {
     const oldStatus = this.confirmedStatus;
     logger.info(
@@ -342,44 +383,39 @@ export abstract class BaseMonitorWorker {
       return;
     }
 
-    // ── Notification cooldown ──────────────────────────────────────────────────
-    // Applies to problem statuses only (not recovery → 'up').
-    // Prevents notification spam when a monitor flaps repeatedly.
+    // ── Notification cooldown (debounce) ─────────────────────────────────────
+    // Prevents notification spam when metrics oscillate around a threshold.
+    // First notification fires immediately. Subsequent state changes during the
+    // cooldown window are queued — the timer resets on every change. Only when
+    // the state has been stable for the full cooldown period does the queued
+    // notification fire. This applies to ALL transitions (alert, down, up).
+    const cooldownMs = (this.config.notificationCooldownSeconds ?? 0) * 1000;
+    if (cooldownMs > 0 && this.lastNotifiedAt > 0) {
+      // We already sent at least one notification — debounce subsequent ones
+      this.lastStateChangeAt = Date.now();
+      this.pendingNotification = { status: newStatus, message, inMaintenance };
+      logger.info(
+        `Monitor "${this.config.name}" (id: ${this.config.id}): ` +
+        `notification queued (cooldown debounce ${this.config.notificationCooldownSeconds}s) — ${oldStatus} → ${newStatus}`,
+      );
+      return;
+    }
+    // First notification or cooldown disabled — send immediately
+    this.lastNotifiedAt = Date.now();
+    this.lastNotifiedStatus = newStatus;
+    this.lastStateChangeAt = Date.now();
+    await this.dispatchNotification(oldStatus, newStatus, message, inMaintenance);
+  }
+
+  /**
+   * Actually send the notification + remediation + live alert.
+   * Called by handleStatusChange (first/immediate) and flushPendingNotification (debounced).
+   */
+  private async dispatchNotification(oldStatus: MonitorStatus, newStatus: MonitorStatus, message?: string, inMaintenance?: boolean): Promise<void> {
     const isProblemStatus = (s: string) =>
       s === 'down' || s === 'ssl_expired' || s === 'ssl_warning' || s === 'alert';
 
-    if (isProblemStatus(newStatus)) {
-      const cooldownMs = (this.config.notificationCooldownSeconds ?? 0) * 1000;
-      if (cooldownMs > 0) {
-        const elapsed = Date.now() - this.lastProblemNotifiedAt;
-        if (elapsed < cooldownMs) {
-          logger.info(
-            `Monitor "${this.config.name}" (id: ${this.config.id}): ` +
-            `notification suppressed — cooldown active (${Math.round((cooldownMs - elapsed) / 1000)}s remaining)`,
-          );
-          this.lastProblemSuppressed = true;
-          return;
-        }
-      }
-      this.lastProblemNotifiedAt = Date.now();
-      this.lastProblemSuppressed = false;
-    }
-
-    // Suppress recovery notifications when the preceding problem was suppressed by cooldown.
-    // Without this, oscillating metrics (e.g. CPU 79% → 81% → 79%) would send "recovered"
-    // notifications without the user ever seeing the corresponding "alert".
-    if (newStatus === 'up' && this.lastProblemSuppressed) {
-      logger.info(
-        `Monitor "${this.config.name}" (id: ${this.config.id}): ` +
-        `recovery notification suppressed — preceding alert was cooldown-suppressed`,
-      );
-      this.lastProblemSuppressed = false;
-      return;
-    }
-
     // ── Notification type filtering for agent monitors ─────────────────────────
-    // If this is an agent monitor, check the device's notification type preferences
-    // before dispatching any channel notifications.
     if (this.config.agentDeviceId) {
       const types = await notificationService.resolveNotificationTypesForDevice(this.config.agentDeviceId as number);
       if (!types.global) {
@@ -406,7 +442,6 @@ export abstract class BaseMonitorWorker {
         );
         return;
       }
-      // 'pending' from AgentMonitorWorker = agent is self-updating — respect the 'update' type pref.
       if (newStatus === 'pending' && !types.update) {
         logger.info(
           `Monitor "${this.config.name}" (id: ${this.config.id}): notification suppressed (update type disabled)`,
@@ -417,14 +452,12 @@ export abstract class BaseMonitorWorker {
 
     // Trigger notifications
     try {
-      // Check if this monitor is covered by a group with groupNotifications
       const groupNotifGroupId = await groupNotificationService.shouldSuppressIndividual(
         this.config.id,
         this.config.groupId,
       );
 
       if (groupNotifGroupId !== null) {
-        // ── Grouped notifications mode ──
         const group = await groupService.getById(groupNotifGroupId);
 
         if (isProblemStatus(newStatus)) {
@@ -435,13 +468,11 @@ export abstract class BaseMonitorWorker {
           );
 
           if (result === 'first_down') {
-            // Query all currently failing monitors in the group (confirmed + retrying)
             const failing = await groupNotificationService.getFailingMonitorsInGroup(groupNotifGroupId);
             const failingNames = failing.map(m => m.name);
             const confirmedNames = failing.filter(m => !m.isRetrying).map(m => m.name);
             const totalFailing = failing.length;
 
-            // Build a descriptive message
             let groupMsg: string;
             if (totalFailing <= 1) {
               groupMsg = message ?? `Monitor "${this.config.name}" in group "${group!.name}" is ${newStatus.toUpperCase()}`;
@@ -449,7 +480,6 @@ export abstract class BaseMonitorWorker {
               groupMsg = `${totalFailing} monitor(s) failing in group "${group!.name}": ${failingNames.join(', ')}`;
             }
 
-            // Send ONE group-level notification
             await notificationService.sendForGroup(groupNotifGroupId, group!.name, {
               monitorName: this.config.name,
               monitorUrl: this.config.url as string | undefined,
@@ -465,7 +495,6 @@ export abstract class BaseMonitorWorker {
               timestamp: new Date().toISOString(),
             });
           }
-          // 'already_down' → suppress individual notification
         } else if (isProblemStatus(oldStatus)) {
           const result = groupNotificationService.handleMonitorUp(
             this.config.id,
@@ -473,7 +502,6 @@ export abstract class BaseMonitorWorker {
           );
 
           if (result === 'all_recovered') {
-            // Send ONE group recovery notification
             await notificationService.sendForGroup(groupNotifGroupId, group!.name, {
               monitorName: group!.name,
               oldStatus: 'down',
@@ -486,16 +514,14 @@ export abstract class BaseMonitorWorker {
               timestamp: new Date().toISOString(),
             });
           }
-          // 'still_down' → suppress recovery notification
         }
       } else {
-        // ── Standard mode (individual notifications) ──
         await notificationService.sendForMonitor(this.config.id, this.config.groupId, {
           monitorName: this.config.name,
           monitorUrl: this.config.url as string | undefined,
           oldStatus,
           newStatus,
-          message,  // e.g. "CPU: 92.1% > 90%; Disk /: 91.0% > 90%"
+          message,
           timestamp: new Date().toISOString(),
         }, this.config.agentDeviceId as number | null | undefined);
       }
@@ -503,7 +529,7 @@ export abstract class BaseMonitorWorker {
       logger.error(error, `Failed to send notifications for monitor ${this.config.id}`);
     }
 
-    // Trigger remediations (fire-and-forget — must not throw)
+    // Trigger remediations
     remediationService.triggerForMonitor(
       this.config.id,
       this.config.name,
@@ -514,7 +540,7 @@ export abstract class BaseMonitorWorker {
       newStatus,
     ).catch(err => logger.error(err, `Remediation trigger failed for monitor ${this.config.id}`));
 
-    // Persist live alert in DB so offline users see it when they reconnect
+    // Persist live alert
     const tenantId = await this.resolveTenantId();
     if (tenantId !== null) {
       const isProblem = isProblemStatus(newStatus);
@@ -528,7 +554,6 @@ export abstract class BaseMonitorWorker {
         severity = 'up';
         alertMessage = 'Monitor recovered';
       } else {
-        // Status transition between non-problem states (e.g. pending→up): no live alert needed
         return;
       }
       liveAlertService.add(tenantId, {
@@ -536,7 +561,6 @@ export abstract class BaseMonitorWorker {
         title: this.config.name,
         message: alertMessage,
         navigateTo: `/monitor/${this.config.id}`,
-        // No stableKey: handleStatusChange only fires on true transitions, so every call is genuine
       }).catch(err => logger.error(err, `Failed to persist live alert for monitor ${this.config.id}`));
     }
   }
