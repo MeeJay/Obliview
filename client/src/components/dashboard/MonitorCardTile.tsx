@@ -72,10 +72,7 @@ export function MonitorCardTile({ monitor, heartbeats }: MonitorCardTileProps) {
           <div className="truncate text-sm font-semibold text-text-primary leading-tight">
             {anonymize(monitor.name)}
           </div>
-          {monitor.description && (
-            <div className="truncate text-xs text-text-muted mt-0.5">{monitor.description}</div>
-          )}
-          {host && !monitor.description && (
+          {host && (
             <div className="truncate text-xs text-text-muted mt-0.5">{host}</div>
           )}
         </div>
@@ -108,6 +105,13 @@ export function MonitorCardTile({ monitor, heartbeats }: MonitorCardTileProps) {
           <span className="text-text-muted">—</span>
         )}
       </div>
+
+      {/* Description banner */}
+      {monitor.description && (
+        <div className="-mx-2.5 -mb-2.5 mt-1 px-2.5 py-1 rounded-b-lg bg-accent/5 border-t border-accent/10 truncate text-[10px] text-accent/70">
+          {monitor.description}
+        </div>
+      )}
     </Link>
   );
 }

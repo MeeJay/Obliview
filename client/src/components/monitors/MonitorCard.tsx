@@ -64,7 +64,7 @@ export function MonitorCard({
     <div
       data-status={monitor.status}
       className={cn(
-        'group flex items-center gap-3 rounded-lg border border-border p-3 transition-colors',
+        'group flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 transition-colors',
         'hover:bg-bg-hover hover:border-border-light',
         selected && 'border-accent bg-bg-tertiary',
         selectionMode && !selectionDisabled && 'cursor-pointer',
@@ -103,10 +103,6 @@ export function MonitorCard({
             )}
           </div>
 
-          {monitor.description && (
-            <p className="text-xs text-text-muted mt-0.5 truncate">{monitor.description}</p>
-          )}
-
           {/* Agent ALERT/DOWN: show violation message in appropriate color */}
           {isAgent && (monitor.status === 'alert' || monitor.status === 'down') && lastHeartbeat?.message && lastHeartbeat.message !== 'All metrics OK' ? (
             <div className={`mt-0.5 text-xs truncate ${monitor.status === 'alert' ? 'text-orange-500 dark:text-orange-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -142,6 +138,13 @@ export function MonitorCard({
           </div>
         )}
       </Link>
+
+      {/* Description banner — full-width row below the card content */}
+      {monitor.description && (
+        <div className="w-full -mx-3 -mb-3 mt-1.5 px-3 py-1.5 rounded-b-lg bg-accent/5 border-t border-accent/10 truncate text-xs text-accent/70">
+          {monitor.description}
+        </div>
+      )}
     </div>
   );
 }

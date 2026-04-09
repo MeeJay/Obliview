@@ -2650,9 +2650,19 @@ export function AgentDetailPage() {
                   {sc.label}
                 </span>
               </div>
-              {/* Notes — inline editable */}
+              {/* Subtitle: system info */}
+              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-text-muted">
+                {device.name         && <span className="font-mono">{anonymize(device.hostname)}</span>}
+                {device.ip           && <span>{anonymizeIp(device.ip)}</span>}
+                {osLabel             && <span>{osLabel}</span>}
+                {device.osInfo?.arch && <span>{device.osInfo.arch}</span>}
+                {device.agentVersion && <span>Agent v{device.agentVersion}</span>}
+                {lastPush            && <span>Last push: {fmtRelTime(lastPush)}</span>}
+                {!snapshot           && <span className="text-yellow-400">{t('status.pending')}…</span>}
+              </div>
+              {/* Notes banner — below system info */}
               {editingNotes ? (
-                <div className="flex items-start gap-1.5 mt-1">
+                <div className="flex items-start gap-1.5 mt-2 w-full">
                   <textarea
                     value={notesValue} autoFocus rows={2}
                     onChange={e => setNotesValue(e.target.value)}
@@ -2670,29 +2680,19 @@ export function AgentDetailPage() {
                   </button>
                 </div>
               ) : device.notes ? (
-                <div className="group/notes flex items-center gap-1 mt-1 cursor-pointer"
+                <div className="group/notes mt-2 w-full rounded-lg bg-accent/5 border border-accent/10 px-3 py-1.5 flex items-center gap-2 cursor-pointer"
                   onClick={() => { setNotesValue(device.notes ?? ''); setEditingNotes(true); }}>
-                  <p className="text-xs text-text-muted truncate">{device.notes}</p>
-                  <Pencil size={10} className="shrink-0 text-text-muted opacity-0 group-hover/notes:opacity-100 transition-opacity" />
+                  <p className="flex-1 text-xs text-accent/70 truncate">{device.notes}</p>
+                  <Pencil size={10} className="shrink-0 text-accent/40 opacity-0 group-hover/notes:opacity-100 transition-opacity" />
                 </div>
               ) : (
                 <button
                   onClick={() => { setNotesValue(''); setEditingNotes(true); }}
-                  className="mt-1 text-[10px] text-text-muted opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity flex items-center gap-0.5"
+                  className="mt-2 text-[10px] text-text-muted opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity flex items-center gap-0.5"
                   title="Add notes">
                   <Pencil size={9} /> Add notes
                 </button>
               )}
-              {/* Subtitle: system info */}
-              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-text-muted">
-                {device.name         && <span className="font-mono">{anonymize(device.hostname)}</span>}
-                {device.ip           && <span>{anonymizeIp(device.ip)}</span>}
-                {osLabel             && <span>{osLabel}</span>}
-                {device.osInfo?.arch && <span>{device.osInfo.arch}</span>}
-                {device.agentVersion && <span>Agent v{device.agentVersion}</span>}
-                {lastPush            && <span>Last push: {fmtRelTime(lastPush)}</span>}
-                {!snapshot           && <span className="text-yellow-400">{t('status.pending')}…</span>}
-              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
