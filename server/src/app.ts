@@ -35,12 +35,25 @@ export function createApp() {
   // can embed this app in an iframe for its persistent multi-app shell.
   app.use(
     helmet({
-      frameguard: false, // removes X-Frame-Options header
+      // ObliTools desktop app embeds this app in an iframe — must allow framing
+      frameguard: false,
       contentSecurityPolicy: {
         directives: {
-          frameAncestors: null, // removes frame-ancestors; allows native shell to embed us
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],  // Tailwind injects inline styles
+          imgSrc: ["'self'", "data:", "blob:"],
+          connectSrc: ["'self'", "wss:", "ws:"],     // Socket.io WebSocket
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          // frame-ancestors not set — allows ObliTools iframe embedding
         },
       },
+      hsts: { maxAge: 31536000, includeSubDomains: true },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      permittedCrossDomainPolicies: { permittedPolicies: 'none' },
     }),
   );
   app.use(
