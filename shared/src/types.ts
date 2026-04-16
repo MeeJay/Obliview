@@ -142,6 +142,9 @@ export interface Monitor {
   agentDeviceName: string | null;  // display name from agent_devices.name (null if not set)
   agentThresholds: AgentThresholds | null;
 
+  // Proxy Agent — when set, the monitor check is executed by this remote agent
+  proxyAgentDeviceId: number | null;
+
   // Metadata
   createdBy: number | null;
   createdAt: string;

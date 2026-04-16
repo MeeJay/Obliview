@@ -244,6 +244,8 @@ export class MonitorWorkerManager {
       // Agent Monitor
       agentDeviceId: monitor.agentDeviceId,
       agentThresholds: monitor.agentThresholds,
+      // Proxy Agent
+      proxyAgentDeviceId: monitor.proxyAgentDeviceId,
     };
   }
 }

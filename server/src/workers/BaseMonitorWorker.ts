@@ -147,7 +147,11 @@ export abstract class BaseMonitorWorker {
     let result: CheckResult;
 
     try {
-      result = await this.performCheck();
+      if (this.config.proxyAgentDeviceId) {
+        result = await this.performCheckViaProxy();
+      } else {
+        result = await this.performCheck();
+      }
     } catch (error) {
       result = {
         status: 'down',
@@ -591,6 +595,71 @@ export abstract class BaseMonitorWorker {
    * Must resolve within this.config.timeoutMs.
    */
   abstract performCheck(): Promise<CheckResult>;
+
+  // ── Proxy Agent support ──────────────────────────────────────────────────
+
+  /** Cached UUID of the proxy device (resolved once from DB) */
+  private _proxyDeviceUuid: string | null = null;
+
+  /**
+   * Execute the monitor check via a remote agent over WebSocket.
+   * Sends the full monitor config; the agent performs the network call and
+   * returns a CheckResult. All downstream processing (retries, notifications,
+   * heartbeats) proceeds identically to a local check.
+   */
+  private async performCheckViaProxy(): Promise<CheckResult> {
+    const { agentHub } = await import('../services/agentHub.service');
+
+    // Resolve the device UUID once and cache it.
+    if (!this._proxyDeviceUuid) {
+      const row = await db('agent_devices')
+        .where({ id: this.config.proxyAgentDeviceId })
+        .select('uuid')
+        .first() as { uuid: string } | undefined;
+      if (!row) {
+        return { status: 'down', message: 'Proxy agent device not found' };
+      }
+      this._proxyDeviceUuid = row.uuid;
+    }
+
+    if (!agentHub.isConnected(this._proxyDeviceUuid)) {
+      return { status: 'down', message: 'Proxy agent is offline' };
+    }
+
+    const result = await agentHub.sendCommandAndWait(
+      this._proxyDeviceUuid,
+      'proxy_check',
+      {
+        type: this.config.type,
+        // Send only the fields the agent needs — strip internal/server-only fields
+        url: this.config.url,
+        method: this.config.method,
+        headers: this.config.headers,
+        body: this.config.body,
+        expectedStatusCodes: this.config.expectedStatusCodes,
+        keyword: this.config.keyword,
+        keywordIsPresent: this.config.keywordIsPresent,
+        ignoreSsl: this.config.ignoreSsl,
+        jsonPath: this.config.jsonPath,
+        jsonExpectedValue: this.config.jsonExpectedValue,
+        hostname: this.config.hostname,
+        port: this.config.port,
+        dnsRecordType: this.config.dnsRecordType,
+        dnsResolver: this.config.dnsResolver,
+        dnsExpectedValue: this.config.dnsExpectedValue,
+        sslWarnDays: this.config.sslWarnDays,
+        smtpHost: this.config.smtpHost,
+        smtpPort: this.config.smtpPort,
+        gameType: this.config.gameType,
+        gameHost: this.config.gameHost,
+        gamePort: this.config.gamePort,
+        timeoutMs: this.config.timeoutMs,
+      },
+      this.config.timeoutMs + 5000,  // agent timeout + network overhead
+    );
+
+    return result as CheckResult;
+  }
 
   /**
    * Expose the last confirmed (notified) status so subclasses can synthesize

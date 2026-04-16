@@ -251,17 +251,23 @@ func handleConfigMsg(cfg *Config, msg cmdConfigMsg, hbTimer *time.Timer) {
 func handleWSCommand(cfg *Config, ws *wsConn, msg *cmdCommandMsg) {
 	log.Printf("Command WS: received command type=%s id=%s", msg.CommandType, msg.ID)
 
-	// The Obliview monitoring agent does not implement remote-session commands
-	// (VNC/RDP/SSH capture). Respond with a failure ack so the server can
-	// mark the session as failed immediately rather than waiting for a timeout.
-	errMsg := fmt.Sprintf("unsupported command type: %s", msg.CommandType)
-	log.Printf("Command WS: %s", errMsg)
+	var result interface{}
+	var errMsg string
+
+	switch msg.CommandType {
+	case "proxy_check":
+		result, errMsg = handleProxyCheck(msg.Payload)
+	default:
+		errMsg = fmt.Sprintf("unsupported command type: %s", msg.CommandType)
+		log.Printf("Command WS: %s", errMsg)
+	}
 
 	ack := cmdAckMsg{
 		Type:        "ack",
 		ID:          msg.ID,
 		CommandType: msg.CommandType,
-		Success:     false,
+		Success:     errMsg == "",
+		Result:      result,
 		Error:       errMsg,
 	}
 

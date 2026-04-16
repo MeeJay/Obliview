@@ -59,6 +59,8 @@ interface MonitorRow {
   agent_device_id: number | null;
   agent_device_name?: string | null;  // from LEFT JOIN with agent_devices (read queries only)
   agent_thresholds: AgentThresholds | null;
+  // Proxy Agent
+  proxy_agent_device_id: number | null;
   created_by: number | null;
   created_at: Date;
   updated_at: Date;
@@ -132,6 +134,8 @@ function rowToMonitor(row: MonitorRow): Monitor {
     agentDeviceId: row.agent_device_id,
     agentDeviceName: row.agent_device_name ?? null,
     agentThresholds: row.agent_thresholds ?? null,
+    // Proxy Agent
+    proxyAgentDeviceId: row.proxy_agent_device_id,
     createdBy: row.created_by,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -194,6 +198,8 @@ function monitorToRow(data: Partial<Monitor>): Record<string, unknown> {
   // Agent Monitor
   if (data.agentDeviceId !== undefined) map.agent_device_id = data.agentDeviceId;
   if (data.agentThresholds !== undefined) map.agent_thresholds = data.agentThresholds ? JSON.stringify(data.agentThresholds) : null;
+  // Proxy Agent
+  if (data.proxyAgentDeviceId !== undefined) map.proxy_agent_device_id = data.proxyAgentDeviceId;
 
   return map;
 }

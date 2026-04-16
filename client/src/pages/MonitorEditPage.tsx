@@ -2,9 +2,10 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { Monitor, MonitorType } from '@obliview/shared';
+import type { Monitor, MonitorType, AgentDevice } from '@obliview/shared';
 import { MONITOR_TYPES, MONITOR_TYPE_LABELS } from '@obliview/shared';
 import { monitorsApi } from '@/api/monitors.api';
+import { agentApi } from '@/api/agent.api';
 import { useMonitorStore } from '@/store/monitorStore';
 import { useGroupStore } from '@/store/groupStore';
 import { Button } from '@/components/common/Button';
@@ -52,11 +53,13 @@ export function MonitorEditPage() {
 
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Partial<Monitor>>(cloneData || defaultForm);
+  const [proxyAgents, setProxyAgents] = useState<AgentDevice[]>([]);
 
-  // Load groups for the selector
+  // Load groups for the selector + approved agents for proxy dropdown
   useEffect(() => {
     fetchGroups();
     fetchTree();
+    agentApi.listDevices('approved').then(setProxyAgents).catch(() => {});
   }, [fetchGroups, fetchTree]);
 
   // Load existing monitor for editing
@@ -607,6 +610,30 @@ export function MonitorEditPage() {
                 required
               />
             )}
+          </div>
+        )}
+
+        {/* Proxy Agent — execute checks via a remote agent */}
+        {form.type !== 'agent' && form.type !== 'push' && (
+          <div className="rounded-lg border border-border bg-bg-secondary p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
+              {t('monitors.form.sectionProxy', 'Proxy Agent')}
+            </h2>
+            <p className="text-xs text-text-secondary">
+              {t('monitors.form.proxyDesc', 'Execute this monitor check through a remote agent instead of the server. Useful for monitoring resources on a LAN that the server cannot reach directly.')}
+            </p>
+            <select
+              value={form.proxyAgentDeviceId ?? ''}
+              onChange={(e) => updateField('proxyAgentDeviceId', e.target.value ? parseInt(e.target.value, 10) : null)}
+              className="w-full rounded-md border border-border bg-bg-tertiary px-3 py-2 text-sm text-text-primary"
+            >
+              <option value="">{t('monitors.form.proxyNone', 'None (server-side check)')}</option>
+              {proxyAgents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name ?? a.hostname}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 

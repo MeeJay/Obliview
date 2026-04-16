@@ -81,6 +81,9 @@ export const createMonitorSchema = z.object({
   valueWatcherThresholdMax: z.number().nullable().optional(),
   valueWatcherPreviousValue: z.string().max(1000).nullable().optional(),
   valueWatcherHeaders: z.record(z.string()).nullable().optional(),
+
+  // Proxy Agent — execute the check via a remote agent instead of locally
+  proxyAgentDeviceId: z.number().int().positive().nullable().optional(),
 });
 
 export const updateMonitorSchema = createMonitorSchema.partial();
