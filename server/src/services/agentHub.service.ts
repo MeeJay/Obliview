@@ -233,13 +233,17 @@ class AgentHubService {
     const conn = this.byDevice.get(deviceUuid);
     if (!conn || conn.ws.readyState !== 1) return;
 
-    // Find the agent_device row for this UUID to get the device ID.
-    const device = await db('agent_devices').where({ uuid: deviceUuid }).select('id').first() as { id: number } | undefined;
+    // Find the agent_device row for this UUID to get the device ID + tenant.
+    const device = await db('agent_devices').where({ uuid: deviceUuid }).select('id', 'tenant_id').first() as { id: number; tenant_id: number } | undefined;
     if (!device) return;
 
-    // Fetch all active monitors that use this device as proxy.
+    // Fetch all active monitors that use this device as proxy — scoped to the
+    // device's tenant as defence-in-depth against cross-tenant config leaks.
+    // The service layer already blocks cross-tenant assignment on create/update,
+    // but this additional filter prevents any legacy rows or bypass from
+    // leaking a tenant's monitor configuration to another tenant's proxy.
     const monitors = await db('monitors')
-      .where({ proxy_agent_device_id: device.id, is_active: true })
+      .where({ proxy_agent_device_id: device.id, is_active: true, tenant_id: device.tenant_id })
       .select(
         'id', 'type', 'interval_seconds', 'timeout_ms',
         'url', 'method', 'headers', 'body', 'expected_status_codes',

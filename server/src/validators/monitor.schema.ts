@@ -34,8 +34,11 @@ export const createMonitorSchema = z.object({
   jsonPath: z.string().max(255).nullable().optional(),
   jsonExpectedValue: z.string().max(255).nullable().optional(),
 
-  // Ping / TCP
-  hostname: z.string().max(255).nullable().optional(),
+  // Ping / TCP — hostname/IP only, rejects shell metacharacters.
+  // Allowed chars: letters, digits, dot, underscore, colon (IPv6), hyphen,
+  // square brackets (IPv6 literal). This feeds into `ping` command execution
+  // on proxy agents — see proxy/src/checks/ping.ts for defence-in-depth.
+  hostname: z.string().max(255).regex(/^[A-Za-z0-9._:\-\[\]]+$/, 'hostname contains invalid characters').nullable().optional(),
   port: z.number().int().min(1).max(65535).nullable().optional(),
 
   // DNS

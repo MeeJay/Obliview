@@ -17,6 +17,7 @@ services:
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost}
       DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
+      FORCE_HTTPS: ${FORCE_HTTPS:-false}
     volumes:
       # Persistent custom directory: scripts, SSH keys, etc.
       # SSH keys: chmod 700 custom/.ssh && chmod 600 custom/.ssh/id_*

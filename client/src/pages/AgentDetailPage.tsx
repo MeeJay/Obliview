@@ -139,8 +139,11 @@ function extractVendor(model: string): string {
   if (lc.includes('arm')) return 'ARM';
   return '';
 }
-function fmtTimestampShort(iso: string, period: 'realtime' | '1h' | '24h' = 'realtime'): string {
+function fmtTimestampShort(iso: string, period: 'realtime' | '1h' | '24h' | '7d' | '30d' = 'realtime'): string {
   const d = new Date(iso);
+  if (period === '7d' || period === '30d') {
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
   if (period === '24h') {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
@@ -227,7 +230,7 @@ function SparkChart({
   data2, color2, legend,
 }: {
   data: number[]; id: string; yMin?: number; yMax?: number; color: string; height?: number;
-  timestamps?: string[]; unit?: string; period?: 'realtime' | '1h' | '24h';
+  timestamps?: string[]; unit?: string; period?: 'realtime' | '1h' | '24h' | '7d' | '30d';
   data2?: number[]; color2?: string; legend?: [string, string];
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -1093,7 +1096,7 @@ function ChartCard({
   icon: React.ReactNode; title: React.ReactNode; accent: string;
   data: number[]; id: string; yMin?: number; yMax?: number;
   color: string; unit: string; latestLabel?: string; height?: number;
-  timestamps?: string[]; period?: 'realtime' | '1h' | '24h';
+  timestamps?: string[]; period?: 'realtime' | '1h' | '24h' | '7d' | '30d';
   titleSuffix?: React.ReactNode;
   data2?: number[]; color2?: string; legend?: [string, string];
 }) {
@@ -1145,7 +1148,7 @@ function ChartCard({
 const CPU_CORES_HEIGHT_KEY = 'bk:agent-cpu-cores-height';
 
 function CpuView({ metrics, history, period, displayConfig }: {
-  metrics: AgentMetrics; history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h';
+  metrics: AgentMetrics; history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' | '7d' | '30d';
   displayConfig: import('@obliview/shared').AgentDisplayConfig;
 }) {
   const cpu = metrics.cpu;
@@ -1347,7 +1350,7 @@ function CpuView({ metrics, history, period, displayConfig }: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function RamView({ history, period, displayConfig }: {
-  history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h';
+  history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' | '7d' | '30d';
   displayConfig: import('@obliview/shared').AgentDisplayConfig;
 }) {
   const timestamps = history.map(h => h.receivedAt);
@@ -1420,7 +1423,7 @@ function RamView({ history, period, displayConfig }: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GpuView({ history, period, displayConfig }: {
-  history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h';
+  history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' | '7d' | '30d';
   displayConfig: import('@obliview/shared').AgentDisplayConfig;
 }) {
   const timestamps = history.map(h => h.receivedAt);
@@ -1489,7 +1492,7 @@ function GpuView({ history, period, displayConfig }: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function OthersView({ history, period, displayConfig }: {
-  history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h';
+  history: AgentPushSnapshot[]; period: 'realtime' | '1h' | '24h' | '7d' | '30d';
   displayConfig: import('@obliview/shared').AgentDisplayConfig;
 }) {
   const timestamps = history.map(h => h.receivedAt);
@@ -1628,7 +1631,7 @@ function TempsView({
   history, period, sensorDisplayNames, onRename,
 }: {
   history: AgentPushSnapshot[];
-  period: 'realtime' | '1h' | '24h';
+  period: 'realtime' | '1h' | '24h' | '7d' | '30d';
   sensorDisplayNames: Record<string, string> | null;
   onRename: (key: string, name: string) => Promise<void>;
 }) {
@@ -2337,7 +2340,7 @@ export function AgentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [thresholds, setThresholds] = useState<AgentThresholds>(DEFAULT_AGENT_THRESHOLDS);
   const [lastPush, setLastPush] = useState<string | null>(null);
-  const [period, setPeriod] = useState<'realtime' | '1h' | '24h'>('realtime');
+  const [period, setPeriod] = useState<'realtime' | '1h' | '24h' | '7d' | '30d'>('realtime');
   const [historicalData, setHistoricalData] = useState<AgentPushSnapshot[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   // Inline display name editing
@@ -2489,7 +2492,7 @@ export function AgentDetailPage() {
       return;
     }
     setLoadingHistory(true);
-    monitorsApi.getHeartbeatsByPeriod(monitorId, period as '1h' | '24h')
+    monitorsApi.getHeartbeatsByPeriod(monitorId, period as '1h' | '24h' | '7d' | '30d')
       .then(heartbeats => {
         const snapshots = heartbeats
           .filter(hb => hb.value)
@@ -2699,7 +2702,7 @@ export function AgentDetailPage() {
             {/* Period selector — only shown for non-overview tabs */}
             {view !== 'overview' && (
               <div className="flex items-center rounded-lg border border-border overflow-hidden text-xs">
-                {(['realtime', '1h', '24h'] as const).map(p => (
+                {(['realtime', '1h', '24h', '7d', '30d'] as const).map(p => (
                   <button key={p} onClick={() => setPeriod(p)}
                     className={cn('px-2.5 py-1.5 font-medium transition-colors',
                       period === p ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-hover'

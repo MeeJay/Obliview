@@ -1,6 +1,22 @@
 import { db } from '../db';
 import type { Monitor, AgentThresholds } from '@obliview/shared';
 import { generateToken } from '../utils/crypto';
+import { AppError } from '../middleware/errorHandler';
+
+/**
+ * Verifies that the given proxy agent device belongs to the expected tenant.
+ * Throws 403 AppError on mismatch or missing device. Used to prevent
+ * cross-tenant RCE / SSRF via forged `proxyAgentDeviceId` in monitor payloads.
+ */
+async function assertProxyDeviceInTenant(proxyAgentDeviceId: number, tenantId: number): Promise<void> {
+  const row = await db('agent_devices')
+    .where({ id: proxyAgentDeviceId })
+    .select('tenant_id')
+    .first() as { tenant_id: number } | undefined;
+  if (!row || row.tenant_id !== tenantId) {
+    throw new AppError(403, 'Invalid proxy agent device');
+  }
+}
 
 // Database row → API model
 interface MonitorRow {
@@ -231,6 +247,11 @@ export const monitorService = {
   },
 
   async create(data: Partial<Monitor>, createdBy: number, tenantId: number): Promise<Monitor> {
+    // Cross-tenant check: proxy agent device must belong to the monitor's tenant.
+    if (data.proxyAgentDeviceId) {
+      await assertProxyDeviceInTenant(data.proxyAgentDeviceId, tenantId);
+    }
+
     const rowData = monitorToRow(data);
     rowData.created_by = createdBy;
     rowData.tenant_id = tenantId;
@@ -245,6 +266,14 @@ export const monitorService = {
   },
 
   async update(id: number, data: Partial<Monitor>): Promise<Monitor | null> {
+    // Cross-tenant check: if proxyAgentDeviceId is being set, fetch the
+    // current monitor's tenant and verify the device belongs to the same one.
+    if (data.proxyAgentDeviceId) {
+      const current = await db('monitors').where({ id }).select('tenant_id').first() as { tenant_id: number } | undefined;
+      if (!current) return null;
+      await assertProxyDeviceInTenant(data.proxyAgentDeviceId, current.tenant_id);
+    }
+
     const rowData = monitorToRow(data);
     rowData.updated_at = new Date();
 
@@ -263,6 +292,17 @@ export const monitorService = {
   },
 
   async bulkUpdate(monitorIds: number[], changes: Partial<Monitor>): Promise<Monitor[]> {
+    // Cross-tenant check: ensure all target monitors share the device's tenant.
+    if (changes.proxyAgentDeviceId) {
+      const tenants = await db('monitors')
+        .whereIn('id', monitorIds)
+        .distinct('tenant_id') as { tenant_id: number }[];
+      if (tenants.length !== 1) {
+        throw new AppError(400, 'Cannot bulk-assign proxy agent across multiple tenants');
+      }
+      await assertProxyDeviceInTenant(changes.proxyAgentDeviceId, tenants[0].tenant_id);
+    }
+
     const rowData = monitorToRow(changes);
     rowData.updated_at = new Date();
 
