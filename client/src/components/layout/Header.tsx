@@ -1,4 +1,4 @@
-import { Download, Eye } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -54,18 +54,9 @@ export function Header() {
       className="flex h-[52px] shrink-0 items-center gap-3.5 px-[18px]"
       style={{ background: 'var(--s1)' }}
     >
-      {/* Logo block */}
-      <Link to="/" className="flex items-center gap-2.5 shrink-0">
-        <span
-          className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px]"
-          style={{
-            background: `linear-gradient(135deg, ${APP_ACCENTS[CURRENT_APP]} 0%, #5fd9d3 100%)`,
-            boxShadow: '0 0 12px -4px rgba(43,196,189,0.5)',
-          }}
-        >
-          <Eye size={14} className="text-white" />
-        </span>
-        <span className="text-[19px] font-semibold tracking-[0.04em] text-text-primary">Obliview</span>
+      {/* Logo */}
+      <Link to="/" className="flex items-center shrink-0">
+        <img src="/logo.svg" alt="Obliview" className="h-9 w-auto max-w-[200px] object-contain" />
       </Link>
 
       {/* Tenant selector */}

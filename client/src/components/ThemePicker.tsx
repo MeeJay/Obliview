@@ -218,16 +218,118 @@ function NeonPreviewSvg() {
   );
 }
 
+/* ─── Obli Operator preview ────────────────────────────────────────────────── */
+
+function OperatorPreviewSvg() {
+  return (
+    <svg viewBox="0 0 280 170" xmlns="http://www.w3.org/2000/svg" className="w-full rounded-md">
+      {/* Page background */}
+      <rect width="280" height="170" fill="#0b0d1a" rx="6" />
+
+      {/* Topbar 52 px scaled */}
+      <rect x="0" y="0" width="280" height="14" fill="#0f1220" />
+      {/* Logo block */}
+      <rect x="6" y="3" width="8" height="8" rx="2" fill="#2bc4bd" />
+      <rect x="17" y="5" width="22" height="4" rx="1.5" fill="#e8ecf5" />
+      {/* Tenant pill */}
+      <rect x="46" y="3.5" width="36" height="7" rx="2" fill="rgba(255,255,255,0.04)" />
+      {/* App switcher pills — current (Obliview) glowing */}
+      <rect x="86"  y="3.5" width="34" height="7" rx="2" fill="rgba(43,196,189,0.18)" />
+      <circle cx="91" cy="7" r="1.5" fill="#2bc4bd" opacity="1" />
+      <rect x="124" y="3.5" width="20" height="7" rx="2" fill="transparent" />
+      <circle cx="129" cy="7" r="1.5" fill="#f5a623" />
+      <rect x="148" y="3.5" width="20" height="7" rx="2" fill="transparent" />
+      <circle cx="153" cy="7" r="1.5" fill="#1edd8a" />
+      {/* User badge */}
+      <rect x="244" y="3.5" width="32" height="7" rx="3.5" fill="rgba(255,255,255,0.04)" />
+      <circle cx="248" cy="7" r="2.5" fill="url(#opAvGrad)" />
+      <defs>
+        <linearGradient id="opAvGrad" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%"   stopColor="#2bc4bd" stopOpacity="0.7" />
+          <stop offset="100%" stopColor="#5fd9d3" stopOpacity="0.4" />
+        </linearGradient>
+      </defs>
+
+      {/* Sidebar 64 px scaled (collapsed showcase) */}
+      <rect x="0" y="14" width="42" height="156" fill="#0f1220" />
+      <rect x="9"  y="20" width="24" height="10" rx="2" fill="rgba(43,196,189,0.18)" />
+      <rect x="14" y="23" width="14" height="4"  rx="1" fill="#5fd9d3" />
+      {[40, 56, 72, 88].map((y, i) => (
+        <g key={y}>
+          <rect x="9" y={y} width="24" height="10" rx="2" fill={i === 0 ? 'rgba(43,196,189,0.12)' : 'transparent'} />
+          <rect x="14" y={y + 3} width="14" height="4" rx="1" fill={i === 0 ? '#5fd9d3' : '#4b5273'} />
+        </g>
+      ))}
+
+      {/* Hero KPI row — 5 cards, first featured */}
+      <rect x="50" y="22" width="74" height="28" rx="3.5" fill="#131728"
+            style={{ filter: 'url(#opGlow)' }} />
+      <rect x="50" y="22" width="74" height="28" rx="3.5"
+            fill="rgba(43,196,189,0.10)" />
+      <rect x="55" y="26" width="22" height="2.5" rx="1" fill="rgba(95,217,211,0.7)" />
+      <rect x="55" y="32" width="34" height="7"  rx="1" fill="#e8ecf5" />
+      <polyline
+        points="55,46 62,44 69,45 76,42 83,43 90,40 97,41 104,38 111,39 118,37"
+        fill="none" stroke="#5fd9d3" strokeWidth="0.8"
+      />
+      <defs>
+        <filter id="opGlow"><feGaussianBlur stdDeviation="0.6" /></filter>
+      </defs>
+
+      {[128, 166, 204, 242].map((x, i) => (
+        <g key={x}>
+          <rect x={x} y="22" width="34" height="28" rx="3.5" fill="#131728" />
+          <rect x={x + 4} y="26" width="20" height="2.5" rx="1" fill="#8c93b6" />
+          <rect x={x + 4} y="32" width="14" height="6" rx="1" fill={['#1edd8a', '#5fd9d3', '#f5a623', '#8c93b6'][i]} />
+          <rect x={x + 4} y="42" width="26" height="1.5" rx="0.5" fill="rgba(255,255,255,0.06)" />
+        </g>
+      ))}
+
+      {/* Chart + Donut row */}
+      <rect x="50" y="56" width="148" height="58" rx="3.5" fill="#131728" />
+      <polygon
+        points="56,108 56,90 70,84 84,86 98,80 112,82 126,76 140,78 154,72 168,74 182,68 196,70 196,108"
+        fill="rgba(95,217,211,0.18)"
+      />
+      <polyline
+        points="56,90 70,84 84,86 98,80 112,82 126,76 140,78 154,72 168,74 182,68 196,70"
+        fill="none" stroke="#5fd9d3" strokeWidth="1"
+      />
+
+      <rect x="202" y="56" width="74" height="58" rx="3.5" fill="#131728" />
+      <circle cx="220" cy="85" r="14" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
+      <circle cx="220" cy="85" r="14" fill="none" stroke="#2bc4bd"      strokeWidth="4" strokeDasharray="35 53" transform="rotate(-90 220 85)" />
+      <circle cx="220" cy="85" r="14" fill="none" stroke="#1edd8a"      strokeWidth="4" strokeDasharray="20 68" strokeDashoffset="-35" transform="rotate(-90 220 85)" />
+      <circle cx="220" cy="85" r="14" fill="none" stroke="#f5a623"      strokeWidth="4" strokeDasharray="12 76" strokeDashoffset="-55" transform="rotate(-90 220 85)" />
+      <rect x="240" y="74" width="32" height="2.5" rx="1" fill="#8c93b6" />
+      <rect x="240" y="80" width="28" height="2.5" rx="1" fill="#8c93b6" opacity="0.8" />
+      <rect x="240" y="86" width="24" height="2.5" rx="1" fill="#8c93b6" opacity="0.6" />
+
+      {/* Bottom status cards */}
+      {[50, 108, 166, 224].map((x, i) => (
+        <g key={x}>
+          <rect x={x} y="120" width="50" height="42" rx="3" fill="#131728" />
+          <rect x={x + 4} y="125" width="9" height="9" rx="2" fill={['rgba(224,58,58,0.18)', 'rgba(30,221,138,0.18)', 'rgba(245,166,35,0.18)', 'rgba(79,123,255,0.18)'][i]} />
+          <rect x={x + 4} y="138" width="20" height="2" rx="0.5" fill="#8c93b6" />
+          <rect x={x + 4} y="144" width="34" height="3" rx="0.5" fill="#e8ecf5" />
+          <rect x={x + 4} y="151" width="24" height="2" rx="0.5" fill="#4b5273" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 /* ─── ThemePicker ──────────────────────────────────────────────────────────── */
 
 const THEMES: { id: AppTheme; label: string; Preview: () => JSX.Element }[] = [
-  { id: 'modern', label: 'Modern UI', Preview: ModernPreviewSvg },
-  { id: 'neon',   label: 'Neon UI',   Preview: NeonPreviewSvg },
+  { id: 'obli-operator', label: 'Obli Operator', Preview: OperatorPreviewSvg },
+  { id: 'modern',        label: 'Modern UI',     Preview: ModernPreviewSvg   },
+  { id: 'neon',          label: 'Neon UI',       Preview: NeonPreviewSvg     },
 ];
 
 export function ThemePicker({ value, onChange }: ThemePickerProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {THEMES.map(({ id, label, Preview }) => {
         const selected = value === id;
         return (
