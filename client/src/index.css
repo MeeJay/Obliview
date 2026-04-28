@@ -48,43 +48,41 @@
   --c-accent-dark:           24 142 138;
   --c-primary:               43 196 189;
 
-  /* Raw aliases used by the new mockup-style chrome (Header / Sidebar /
-     DashboardPage). Matches the variable names from the design-system spec
-     so component CSS can be lifted from the mockup verbatim. */
-  --bg:        #0b0d1a;
-  --s1:        #0f1220;   /* topbar + sidebar */
-  --s2:        #131728;   /* card */
-  --s3:        #181c30;
-  --s4:        #1d2238;
-  --hover:     rgba(255,255,255,0.04);
-  --hover2:    rgba(255,255,255,0.06);
-  --text:      #e8ecf5;
-  --text2:     #8c93b6;
-  --text3:     #4b5273;
-  --text4:     #2f3552;
-  --accent:    #2bc4bd;
-  --accent2:   #5fd9d3;
-  --green:     #1edd8a;
-  --amber:     #f5a623;
-  --blue:      #4f7bff;
+  /* Raw aliases used by the new mockup-style chrome. Defined per-theme so
+     `var(--accent)` etc. resolve to the active theme's tokens. The chrome
+     (Header/Sidebar) uses Tailwind classes that read --c-* directly; these
+     aliases are only used by SVG strokes, gradients, and a few inline styles
+     where Tailwind utilities are awkward. */
+  --s1:        rgb(var(--c-bg-secondary));
+  --s2:        rgb(var(--c-bg-secondary));
+  --s3:        rgb(var(--c-bg-tertiary));
+  --s4:        rgb(var(--c-bg-active));
+  --accent:    rgb(var(--c-accent));
+  --accent2:   rgb(var(--c-accent-hover));
+  --text:      rgb(var(--c-text-primary));
+  --text2:     rgb(var(--c-text-secondary));
+  --text3:     rgb(var(--c-text-muted));
+  --green:     rgb(var(--c-status-up));
+  --amber:     rgb(var(--c-status-pending));
+  --blue:      rgb(var(--c-status-maintenance));
   --shadow-card: 0 1px 0 0 rgba(255,255,255,0.03), 0 6px 24px -8px rgba(0,0,0,0.45);
   --shadow-glow: 0 0 0 1px rgba(43,196,189,0.18) inset, 0 6px 28px -10px rgba(43,196,189,0.25);
 }
 
-/* ── Modern UI (legacy / "obli-classic") ──────────────────────────────────── */
+/* ── Modern UI — fond très sombre, légèrement teinté de teal (accent app) ── */
 [data-theme="modern"] {
-  --c-bg-primary:            13 17 23;
-  --c-bg-secondary:          22 27 34;
-  --c-bg-tertiary:           28 35 51;
-  --c-bg-hover:              33 38 45;
-  --c-bg-active:             40 46 56;
+  --c-bg-primary:            10 14 16;     /* near-black with a hint of teal */
+  --c-bg-secondary:          14 19 22;
+  --c-bg-tertiary:           19 26 30;
+  --c-bg-hover:              24 33 37;
+  --c-bg-active:             28 40 45;
 
-  --c-border:                48 54 61;
-  --c-border-light:          61 68 77;
+  --c-border:                32 44 50;
+  --c-border-light:          48 64 72;
 
-  --c-text-primary:          230 237 243;
-  --c-text-secondary:        139 148 158;
-  --c-text-muted:            110 118 129;
+  --c-text-primary:          228 240 240;
+  --c-text-secondary:        145 168 170;
+  --c-text-muted:            104 124 128;
 
   --c-status-up:             46 160 67;
   --c-status-up-bg:          13 40 24;
@@ -101,13 +99,29 @@
   --c-status-ssl-expired:    163 113 247;
   --c-status-ssl-expired-bg: 39 26 69;
 
-  --c-accent:                88 166 255;
-  --c-accent-hover:          121 192 255;
-  --c-accent-dark:           31 111 235;
-  --c-primary:               88 166 255;
+  /* Same teal accent as Operator — Obliview's app brand */
+  --c-accent:                43 196 189;
+  --c-accent-hover:          95 217 211;
+  --c-accent-dark:           24 142 138;
+  --c-primary:               43 196 189;
+
+  --s1:        rgb(var(--c-bg-secondary));
+  --s2:        rgb(var(--c-bg-secondary));
+  --s3:        rgb(var(--c-bg-tertiary));
+  --s4:        rgb(var(--c-bg-active));
+  --accent:    rgb(var(--c-accent));
+  --accent2:   rgb(var(--c-accent-hover));
+  --text:      rgb(var(--c-text-primary));
+  --text2:     rgb(var(--c-text-secondary));
+  --text3:     rgb(var(--c-text-muted));
+  --green:     rgb(var(--c-status-up));
+  --amber:     rgb(var(--c-status-pending));
+  --blue:      rgb(var(--c-status-maintenance));
+  --shadow-card: 0 1px 0 0 rgba(255,255,255,0.02), 0 4px 18px -6px rgba(0,0,0,0.55);
+  --shadow-glow: 0 0 0 1px rgba(43,196,189,0.14) inset, 0 4px 22px -10px rgba(43,196,189,0.18);
 }
 
-/* ── Neon UI — fonds neutres (Obliguard-style) + accent cyan ─────────────── */
+/* ── Neon UI — fonds neutres très sombres, accent cyan, glows discrets ──── */
 [data-theme="neon"] {
   --c-bg-primary:            7 8 10;
   --c-bg-secondary:          13 14 17;
@@ -141,6 +155,21 @@
   --c-accent-hover:          64 216 255;
   --c-accent-dark:           0 144 187;
   --c-primary:               0 200 255;
+
+  --s1:        rgb(var(--c-bg-secondary));
+  --s2:        rgb(var(--c-bg-secondary));
+  --s3:        rgb(var(--c-bg-tertiary));
+  --s4:        rgb(var(--c-bg-active));
+  --accent:    rgb(var(--c-accent));
+  --accent2:   rgb(var(--c-accent-hover));
+  --text:      rgb(var(--c-text-primary));
+  --text2:     rgb(var(--c-text-secondary));
+  --text3:     rgb(var(--c-text-muted));
+  --green:     rgb(var(--c-status-up));
+  --amber:     rgb(var(--c-status-pending));
+  --blue:      rgb(var(--c-status-maintenance));
+  --shadow-card: 0 1px 0 0 rgba(255,255,255,0.02), 0 4px 16px -6px rgba(0,0,0,0.6);
+  --shadow-glow: 0 0 0 1px rgba(0,200,255,0.20) inset, 0 4px 22px -10px rgba(0,200,255,0.20);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

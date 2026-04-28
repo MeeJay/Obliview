@@ -124,8 +124,8 @@ function DraggableDeviceItem({
         className={cn(
           'flex items-center gap-2 rounded-md py-1 px-2 text-sm transition-colors',
           isActive
-            ? 'bg-[rgba(43,196,189,0.12)] text-[var(--accent2)]'
-            : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+            ? 'bg-accent/10 text-accent-hover'
+            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
         )}
         onClick={e => { if (isDragging) e.preventDefault(); }}
       >
@@ -361,8 +361,8 @@ export function Sidebar() {
                 className={cn(
                   'flex items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors',
                   isGroupActive
-                    ? 'bg-[rgba(43,196,189,0.12)] text-[var(--accent2)]'
-                    : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                    ? 'bg-accent/10 text-accent-hover'
+                    : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
                 )}
               >
                 <Server size={14} className="shrink-0 text-text-muted" />
@@ -406,13 +406,13 @@ export function Sidebar() {
       ...(admin ? adminNavItems : []),
     ];
     return (
-      <aside className="flex h-full w-full flex-col" style={{ background: 'var(--s1)' }}>
+      <aside className="flex h-full w-full flex-col bg-bg-secondary">
         {/* Header — toggle expand */}
         <div className="flex flex-col items-center gap-2 px-2 pt-3.5">
           <button
             onClick={toggleSidebarCollapsed}
             title={t('nav.expandSidebar', { defaultValue: 'Expand' })}
-            className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
             <ChevronsRight size={16} />
           </button>
@@ -420,8 +420,7 @@ export function Sidebar() {
             <button
               onClick={openAddAgentModal}
               title={t('common.agent')}
-              className="flex h-[38px] w-[38px] items-center justify-center rounded-[7px] text-[var(--accent2)] transition-colors"
-              style={{ background: 'rgba(43,196,189,0.12)' }}
+              className="flex h-[38px] w-[38px] items-center justify-center rounded-[7px] bg-accent/10 text-accent-hover transition-colors hover:bg-accent/20"
             >
               <Plus size={14} />
             </button>
@@ -440,8 +439,8 @@ export function Sidebar() {
                 className={cn(
                   'flex h-9 w-9 items-center justify-center rounded-md transition-colors',
                   isActive
-                    ? 'bg-[rgba(43,196,189,0.12)] text-[var(--accent2)]'
-                    : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                    ? 'bg-accent/10 text-accent-hover'
+                    : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
                 )}
               >
                 {item.icon}
@@ -451,7 +450,7 @@ export function Sidebar() {
         </nav>
 
         {/* Footer — avatar + logout */}
-        <div className="flex flex-col items-center gap-2 border-t border-white/5 px-2 py-3">
+        <div className="flex flex-col items-center gap-2 border-t border-border px-2 py-3">
           <Link
             to="/profile"
             className="flex h-9 w-9 items-center justify-center rounded-full transition-opacity hover:opacity-80"
@@ -462,7 +461,7 @@ export function Sidebar() {
           <button
             onClick={() => useAuthStore.getState().logout()}
             title={t('nav.signOut')}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
             <LogOut size={16} />
           </button>
@@ -474,49 +473,47 @@ export function Sidebar() {
   // ── Expanded (full content, 260 px / variable) render ──────────────────────
 
   return (
-    <aside className="flex h-full w-full flex-col" style={{ background: 'var(--s1)' }}>
+    <aside className="flex h-full w-full flex-col bg-bg-secondary">
       {/* Header — toggle row + Add agent + search */}
       <div className="flex flex-col gap-[9px] px-3 pb-2.5 pt-3.5">
         <div className="flex items-center justify-end gap-1">
-          {/* Pin/Float toggle — hidden when collapsed (we are not collapsed here). */}
+          {/* Collapse toggle — left of the row, hidden when floating per §4.2.1. */}
+          {!sidebarFloating && (
+            <button
+              onClick={toggleSidebarCollapsed}
+              title={t('nav.collapseSidebar', { defaultValue: 'Collapse' })}
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+          )}
+          {/* Pin/Float toggle — right of the row. */}
           <button
             onClick={toggleSidebarFloating}
             title={sidebarFloating ? t('nav.pinSidebar') : t('nav.floatSidebar')}
             className={cn(
               'flex h-[30px] w-[30px] items-center justify-center rounded-md transition-colors',
               sidebarFloating
-                ? 'text-[var(--accent2)] hover:bg-[rgba(43,196,189,0.10)]'
-                : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                ? 'text-accent-hover hover:bg-accent/10'
+                : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
             )}
           >
             {sidebarFloating ? <Pin size={15} /> : <PinOff size={15} />}
           </button>
-          {/* Collapse toggle — hidden when floating per spec §4.2.1. */}
-          {!sidebarFloating && (
-            <button
-              onClick={toggleSidebarCollapsed}
-              title={t('nav.collapseSidebar', { defaultValue: 'Collapse' })}
-              className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
-            >
-              <ChevronsLeft size={16} />
-            </button>
-          )}
         </div>
 
         {canCreate() && (
           <div className="flex gap-2">
             <Link
               to="/monitor/new"
-              className="flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[7px] text-[13px] font-medium text-[var(--accent2)] transition-colors"
-              style={{ background: 'rgba(43,196,189,0.12)' }}
+              className="flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[7px] bg-accent/10 text-[13px] font-medium text-accent-hover transition-colors hover:bg-accent/20"
             >
               <Plus size={14} />
               <span>{t('common.monitor')}</span>
             </Link>
             <button
               onClick={openAddAgentModal}
-              className="flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[7px] text-[13px] font-medium text-[var(--accent2)] transition-colors hover:brightness-110"
-              style={{ background: 'rgba(43,196,189,0.12)' }}
+              className="flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[7px] bg-accent/10 text-[13px] font-medium text-accent-hover transition-colors hover:bg-accent/20"
             >
               <Plus size={14} />
               <span>{t('common.agent')}</span>
@@ -531,7 +528,7 @@ export function Sidebar() {
             placeholder={t('common.search')}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="h-[38px] w-full rounded-[7px] bg-[rgba(255,255,255,0.03)] pl-8 pr-3 text-[13px] text-text-primary placeholder:text-text-muted focus:bg-[rgba(255,255,255,0.06)] focus:outline-none"
+            className="h-[38px] w-full rounded-[7px] bg-bg-tertiary pl-8 pr-3 text-[13px] text-text-primary placeholder:text-text-muted focus:bg-bg-hover focus:outline-none"
           />
         </div>
       </div>
@@ -545,8 +542,8 @@ export function Sidebar() {
               className={cn(
                 'rounded-full px-2 py-0.5 text-xs transition-colors',
                 showMonitors
-                  ? 'bg-[rgba(43,196,189,0.18)] text-[var(--accent2)]'
-                  : 'bg-[rgba(255,255,255,0.04)] text-text-muted hover:text-text-secondary',
+                  ? 'bg-accent/20 text-accent-hover'
+                  : 'bg-bg-hover text-text-muted hover:text-text-secondary',
               )}
             >
               {t('importExport.monitors')}
@@ -556,8 +553,8 @@ export function Sidebar() {
               className={cn(
                 'rounded-full px-2 py-0.5 text-xs transition-colors',
                 showAgents
-                  ? 'bg-[rgba(43,196,189,0.18)] text-[var(--accent2)]'
-                  : 'bg-[rgba(255,255,255,0.04)] text-text-muted hover:text-text-secondary',
+                  ? 'bg-accent/20 text-accent-hover'
+                  : 'bg-bg-hover text-text-muted hover:text-text-secondary',
               )}
             >
               {t('nav.agents')}
@@ -566,7 +563,7 @@ export function Sidebar() {
           <button
             onClick={() => setSidebarLayout('side-by-side')}
             title="Switch to side-by-side"
-            className="shrink-0 rounded p-1 text-text-muted transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+            className="shrink-0 rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
             <ArrowLeftRight size={13} />
           </button>
@@ -594,7 +591,7 @@ export function Sidebar() {
 
           <div
             onMouseDown={handleSplitMouseDown}
-            className="w-1 shrink-0 cursor-col-resize bg-white/5 transition-colors hover:bg-[var(--accent)]/40 active:bg-[var(--accent)]/60"
+            className="w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-accent/40 active:bg-accent/60"
           />
 
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -603,7 +600,7 @@ export function Sidebar() {
               <button
                 onClick={() => setSidebarLayout('stacked')}
                 title="Switch to stacked"
-                className="shrink-0 rounded p-0.5 text-text-muted transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+                className="shrink-0 rounded p-0.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
               >
                 <ArrowLeftRight size={12} />
               </button>
@@ -631,8 +628,8 @@ export function Sidebar() {
               className={cn(
                 'mb-0.5 flex h-[38px] items-center gap-3 rounded-[7px] px-3 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-[rgba(43,196,189,0.12)] text-[var(--accent2)]'
-                  : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                  ? 'bg-accent/10 text-accent-hover'
+                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
               )}
             >
               {item.icon}
@@ -649,12 +646,12 @@ export function Sidebar() {
             onClick={() => setAdminMenuOpen(v => !v)}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-text-muted transition-colors hover:text-text-secondary"
           >
-            <div className="h-px flex-1 bg-white/5" />
+            <div className="h-px flex-1 bg-border" />
             <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
               {t('nav.administration', { defaultValue: 'ADMINISTRATION' })}
             </span>
             <ChevronDown size={11} className={cn('transition-transform duration-200', !adminMenuOpen && '-rotate-90')} />
-            <div className="h-px flex-1 bg-white/5" />
+            <div className="h-px flex-1 bg-border" />
           </button>
 
           {adminMenuOpen && (
@@ -668,8 +665,8 @@ export function Sidebar() {
                     className={cn(
                       'mb-0.5 flex h-[38px] items-center gap-3 rounded-[7px] px-3 text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-[rgba(43,196,189,0.12)] text-[var(--accent2)]'
-                        : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                        ? 'bg-accent/10 text-accent-hover'
+                        : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
                     )}
                   >
                     {item.icon}
@@ -683,14 +680,14 @@ export function Sidebar() {
       )}
 
       {/* Footer — user row + logout */}
-      <div className="border-t border-white/5 p-2.5">
+      <div className="border-t border-border p-2.5">
         <Link
           to="/profile"
           className={cn(
             'flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
             location.pathname === '/profile'
-              ? 'bg-[rgba(43,196,189,0.12)]'
-              : 'hover:bg-[rgba(255,255,255,0.04)]',
+              ? 'bg-accent/10'
+              : 'hover:bg-bg-hover',
           )}
         >
           <UserAvatar avatar={user?.avatar} username={user?.username ?? '?'} size={20} />
@@ -705,7 +702,7 @@ export function Sidebar() {
         </Link>
         <button
           onClick={() => useAuthStore.getState().logout()}
-          className="mt-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-text-secondary transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+          className="mt-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
         >
           <LogOut size={14} />
           <span>{t('nav.signOut')}</span>

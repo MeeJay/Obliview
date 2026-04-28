@@ -50,10 +50,7 @@ export function Header() {
   for (const app of connectedApps) appsByType.set(app.appType, app);
 
   return (
-    <header
-      className="flex h-[52px] shrink-0 items-center gap-3.5 px-[18px]"
-      style={{ background: 'var(--s1)' }}
-    >
+    <header className="flex h-[52px] shrink-0 items-center gap-3.5 bg-bg-secondary px-[18px]">
       {/* Logo */}
       <Link to="/" className="flex items-center shrink-0">
         <img src="/logo.svg" alt="Obliview" className="h-9 w-auto max-w-[200px] object-contain" />
@@ -84,13 +81,9 @@ export function Header() {
                 className={cn(
                   'flex items-center gap-[7px] rounded-[7px] px-3 py-1.5 text-[13px] font-medium transition-colors',
                   isCurrent
-                    ? 'cursor-default'
-                    : 'cursor-pointer text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                    ? 'cursor-default bg-accent/10 text-accent-hover'
+                    : 'cursor-pointer text-text-secondary hover:bg-bg-hover hover:text-text-primary',
                 )}
-                style={isCurrent ? {
-                  background: `${accent}1f`,            // ~12% alpha
-                  color: '#5fd9d3',
-                } : undefined}
               >
                 <span
                   className="h-[7px] w-[7px] rounded-full shrink-0"
@@ -112,7 +105,7 @@ export function Header() {
         {!isNativeApp && (
           <Link
             to="/download"
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12.5px] font-medium text-text-secondary transition-colors hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12.5px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
           >
             <Download size={14} />
             {t('nav.downloadApp')}
@@ -124,15 +117,12 @@ export function Header() {
 
         {/* User badge */}
         {user && (
-          <div className="flex items-center gap-[9px] rounded-[22px] bg-[rgba(255,255,255,0.04)] py-[5px] pl-[5px] pr-3 text-[12.5px]">
+          <div className="flex items-center gap-[9px] rounded-[22px] bg-bg-hover py-[5px] pl-[5px] pr-3 text-[12.5px]">
             <UserAvatar avatar={user.avatar} username={user.username} size={28} />
             <span className="font-medium text-text-primary">
               {anonymizeUsername(user.username.startsWith('og_') ? user.username.slice(3) : user.username)}
             </span>
-            <span
-              className="border-l border-white/10 pl-1.5 font-mono text-[10px] tracking-[0.04em]"
-              style={{ color: 'var(--accent2)' }}
-            >
+            <span className="border-l border-white/10 pl-1.5 font-mono text-[10px] tracking-[0.04em] text-accent-hover">
               {user.role}
             </span>
           </div>

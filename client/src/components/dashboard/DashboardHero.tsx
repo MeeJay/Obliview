@@ -124,11 +124,11 @@ export function DashboardHero({ monitors, overallUptime, overallAvgRt }: Dashboa
         <div
           className="relative overflow-hidden rounded-[14px] p-5"
           style={{
-            background: 'linear-gradient(140deg, rgba(43,196,189,0.12) 0%, var(--s2) 60%)',
+            background: 'linear-gradient(140deg, rgb(var(--c-accent) / 0.12) 0%, rgb(var(--c-bg-secondary)) 60%)',
             boxShadow: 'var(--shadow-glow)',
           }}
         >
-          <div className="font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'rgba(95,217,211,0.75)' }}>
+          <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-accent-hover/75">
             {t('dashboard.kpiTotal', { defaultValue: 'TOTAL MONITORS' })}
           </div>
           <div className="mt-3 text-[36px] font-semibold leading-none tracking-[0.02em] text-text-primary">
@@ -178,7 +178,7 @@ export function DashboardHero({ monitors, overallUptime, overallAvgRt }: Dashboa
       {/* ── Two-column row : chart + donut ───────────────────────────── */}
       <div className="grid gap-3.5" style={{ gridTemplateColumns: '2fr 1fr' }}>
         {/* Uptime % chart */}
-        <div className="flex min-h-[280px] flex-col gap-4 rounded-[14px] p-5 shadow-card" style={{ background: 'var(--s2)' }}>
+        <div className="flex min-h-[280px] flex-col gap-4 rounded-[14px] p-5 shadow-card" style={{ background: 'rgb(var(--c-bg-secondary))' }}>
           <div className="flex items-center gap-2.5">
             <h3 className="text-[16px] font-semibold tracking-[0.02em] text-text-primary">
               {t('dashboard.uptimeOverTime', { defaultValue: 'Uptime over time' })}
@@ -194,8 +194,8 @@ export function DashboardHero({ monitors, overallUptime, overallAvgRt }: Dashboa
                   className={cn(
                     'rounded-md px-2.5 py-1 font-mono text-[11px] tracking-[0.04em] transition-colors',
                     tab === id
-                      ? 'bg-[rgba(43,196,189,0.12)] text-[var(--accent2)]'
-                      : 'text-text-secondary hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary',
+                      ? 'bg-accent/10 text-accent-hover'
+                      : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
                   )}
                 >
                   {id}
@@ -230,7 +230,7 @@ export function DashboardHero({ monitors, overallUptime, overallAvgRt }: Dashboa
         </div>
 
         {/* Monitor types donut */}
-        <div className="flex min-h-[280px] flex-col gap-4 rounded-[14px] p-5 shadow-card" style={{ background: 'var(--s2)' }}>
+        <div className="flex min-h-[280px] flex-col gap-4 rounded-[14px] p-5 shadow-card" style={{ background: 'rgb(var(--c-bg-secondary))' }}>
           <h3 className="text-[16px] font-semibold tracking-[0.02em] text-text-primary">
             {t('dashboard.monitorTypes', { defaultValue: 'Monitor types' })}
           </h3>
@@ -320,7 +320,7 @@ function KpiCard({
     muted: 'rgba(255,255,255,0.18)',
   }[tone];
   return (
-    <div className="relative overflow-hidden rounded-[14px] p-5 shadow-card" style={{ background: 'var(--s2)' }}>
+    <div className="relative overflow-hidden rounded-[14px] p-5 shadow-card" style={{ background: 'rgb(var(--c-bg-secondary))' }}>
       <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">
         {label}
       </div>
@@ -421,7 +421,7 @@ function StatusCard({
     muted: 'var(--text2)',
   }[badgeTone];
   return (
-    <div className="flex items-center gap-3.5 rounded-[12px] px-4 py-3.5 shadow-card" style={{ background: 'var(--s2)' }}>
+    <div className="flex items-center gap-3.5 rounded-[12px] px-4 py-3.5 shadow-card" style={{ background: 'rgb(var(--c-bg-secondary))' }}>
       <div
         className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[9px]"
         style={{ background: iconBg, color: iconColor }}
