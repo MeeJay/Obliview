@@ -136,11 +136,18 @@ export class AgentMonitorWorker extends BaseMonitorWorker {
             ? { status: 'down', message: `Device offline (last seen ${timeLabel} ago)` }
             : { status: 'inactive', message: `No data received for ${timeLabel} (heartbeat monitoring disabled)` };
         } else {
-          // Agent is online — return the status computed at push time
+          // Agent is online — return the status computed at push time for the
+          // monitor badge / notifications, but pin the heartbeat row to 'up'.
+          // Threshold violations (CPU/RAM/temp) must NOT register as downtime
+          // in the Uptime tab — that section is reachability only.
           const message = snapshot.violations.length > 0
             ? snapshot.violations.join('; ')
             : 'All metrics OK';
-          result = { status: snapshot.overallStatus, message };
+          result = {
+            status: snapshot.overallStatus,
+            heartbeatStatus: 'up',
+            message,
+          };
         }
       }
     }

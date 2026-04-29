@@ -1705,6 +1705,104 @@ function TempsView({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Uptime % chart — buckets heartbeats over the visible period and plots the
+// rolling reachability ratio. Reachability only: a heartbeat counts as "up"
+// if status === 'up', and "down" otherwise (alert/down/pending all flunk).
+// Note: with the recent backend change, agent heartbeats are written as 'up'
+// whenever a push is received — threshold violations no longer pollute the
+// timeline. So this chart now reflects pure connectivity over time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function UptimeChart({
+  heartbeats,
+  period,
+}: {
+  heartbeats: Heartbeat[];
+  period: 'realtime' | '1h' | '24h' | '7d' | '30d';
+}) {
+  const { t } = useTranslation();
+
+  if (heartbeats.length === 0) return null;
+
+  // Bucket the visible window into N segments and compute uptime % per bucket.
+  const N = 60;
+  const firstTs = new Date(heartbeats[0].createdAt).getTime();
+  const lastTs  = new Date(heartbeats[heartbeats.length - 1].createdAt).getTime();
+  const span    = Math.max(1, lastTs - firstTs);
+  const bucketMs = span / N;
+
+  const buckets: Array<{ up: number; total: number }> = Array.from({ length: N }, () => ({ up: 0, total: 0 }));
+  for (const hb of heartbeats) {
+    const t = new Date(hb.createdAt).getTime();
+    let i = Math.floor((t - firstTs) / bucketMs);
+    if (i >= N) i = N - 1;
+    if (i < 0)  i = 0;
+    buckets[i].total++;
+    if (hb.status === 'up') buckets[i].up++;
+  }
+
+  // Carry-forward the previous bucket's value when there are no heartbeats —
+  // avoids spurious 0%-then-100% spikes from sparse data. Initial value: 100%
+  // when the very first bucket has no data (assume online until proven otherwise).
+  const pcts: number[] = [];
+  let last = 100;
+  for (const b of buckets) {
+    if (b.total > 0) last = (b.up / b.total) * 100;
+    pcts.push(last);
+  }
+
+  // Build SVG path. ViewBox 600 × 100 — Y axis inverted (top=100%, bottom=0%).
+  const W = 600, H = 100;
+  const stepX = W / (N - 1);
+  const points = pcts.map((p, i) => `${(i * stepX).toFixed(2)},${(H - (p * H / 100)).toFixed(2)}`);
+  const linePath = points.join(' ');
+  const areaPath = `0,${H} ${linePath} ${W},${H}`;
+
+  // Pick the color band per the *worst* bucket — gives a quick visual sense of
+  // whether anything dipped during the window.
+  const minPct = Math.min(...pcts);
+  const stroke =
+    minPct >= 99 ? 'rgb(var(--c-status-up))' :
+    minPct >= 95 ? 'rgb(var(--c-status-pending))' :
+                   'rgb(var(--c-status-down))';
+
+  // 4 horizontal grid lines: 0 / 50 / 95 / 100 %
+  const gridLines = [0, 50, 95, 100];
+
+  return (
+    <div className="space-y-2">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-[160px]">
+        <defs>
+          <linearGradient id="uptime-area" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%"   stopColor={stroke} stopOpacity="0.30" />
+            <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* Grid */}
+        {gridLines.map(g => (
+          <line key={g}
+            x1="0" x2={W}
+            y1={H - (g * H / 100)} y2={H - (g * H / 100)}
+            stroke="rgb(var(--c-border) / 0.45)"
+            strokeWidth="0.5"
+            strokeDasharray={g === 100 ? '' : '2 3'}
+          />
+        ))}
+        {/* Area + line */}
+        <polygon points={areaPath} fill="url(#uptime-area)" />
+        <polyline points={linePath} fill="none" stroke={stroke} strokeWidth="1.5" />
+      </svg>
+      {/* Y axis labels (right side) + X axis range (left/right) */}
+      <div className="flex items-center justify-between text-[10px] font-mono text-text-muted">
+        <span>{fmtTimestampShort(heartbeats[0].createdAt, period)}</span>
+        <span>{t('agent.uptime.scale', 'Scale')}: 0% – 100%</span>
+        <span>{fmtTimestampShort(heartbeats[heartbeats.length - 1].createdAt, period)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Uptime View
 // Online/offline timeline backed by the heartbeat history of the agent's
 // monitor. Period selector mirrors the other tabs (Live / 1H / 24H / 7d / 30d).
@@ -1838,6 +1936,16 @@ function UptimeView({
           </div>
         </div>
       </div>
+
+      {/* Uptime % over time chart */}
+      {total > 0 && (
+        <div className="rounded-xl bg-bg-secondary p-4 shadow-card">
+          <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-text-muted mb-3">
+            {t('agent.uptime.chart', 'Uptime over time')}
+          </div>
+          <UptimeChart heartbeats={heartbeats} period={period} />
+        </div>
+      )}
 
       {/* Heartbeat timeline */}
       <div className="rounded-xl bg-bg-secondary p-4 shadow-card">

@@ -25,6 +25,15 @@ export interface CheckResult {
   /** When true, suppress individual monitor notifications — the proxy agent is
    *  down and a single "proxy offline" notification should be sent instead. */
   suppressNotification?: boolean;
+  /**
+   * Override the status written to the heartbeat row, decoupling reachability
+   * tracking from the monitor's logical state. Used by AgentMonitorWorker so a
+   * threshold violation (CPU/RAM/temp) reports `status='alert'` for the badge
+   * + notifications but leaves the heartbeat row as `'up'` — the Uptime tab
+   * only cares whether the agent is reachable, not whether a metric is hot.
+   * Defaults to `status` when omitted.
+   */
+  heartbeatStatus?: MonitorStatus;
 }
 
 export interface MonitorConfig {
@@ -206,9 +215,11 @@ export abstract class BaseMonitorWorker {
         : await maintenanceService.isInMaintenance('monitor', this.config.id, this.config.groupId);
 
       // 1. Store heartbeat (with retry flag + maintenance tag)
+      //    heartbeatStatus overrides status for the row so reachability-only
+      //    timelines stay clean even when the monitor is in 'alert' state.
       const heartbeat = await heartbeatService.create({
         monitorId: this.config.id,
-        status: result.status,
+        status: result.heartbeatStatus ?? result.status,
         responseTime: result.responseTime,
         statusCode: result.statusCode,
         message: result.message,

@@ -639,7 +639,10 @@ export const agentService = {
       metrics: fullMetrics,
       violations,
       violationKeys: [], // keys not persisted in DB; recomputed on next live push
-      overallStatus: (hb.status === 'alert' ? 'alert' : 'up') as 'up' | 'alert',
+      // Derive from violations array (still serialised in `_violations`).
+      // Heartbeat rows now always store reachability ('up' on push), so
+      // `hb.status` no longer carries the alert flag — only the JSON value does.
+      overallStatus: (violations.length > 0 ? 'alert' : 'up') as 'up' | 'alert',
     };
 
     // Cache it so next call is instant
@@ -935,9 +938,13 @@ export const agentService = {
     });
 
     Promise.all([
+      // The arrival of a push proves the agent is reachable — write 'up' to
+      // the heartbeat row regardless of threshold violations.  The monitor's
+      // persisted status (below) keeps `overallStatus` so the dashboard pill
+      // and sidebar badge still light up orange on alert.
       heartbeatService.create({
         monitorId: monitor.id,
-        status: overallStatus,
+        status: 'up',
         message,
         value: heartbeatValue,
       }).then(heartbeat => {
