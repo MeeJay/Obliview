@@ -148,8 +148,6 @@ $h=[System.ResolveEventHandler]{
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve($h)
 try{
     [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($d,'LibreHardwareMonitorLib.dll'))|Out-Null
-    $svc=Get-Service 'PawnIO' -ErrorAction SilentlyContinue
-    if($svc -and $svc.Status -ne 'Running'){Start-Service 'PawnIO' -ErrorAction SilentlyContinue;Start-Sleep -Milliseconds 1000}
     $c=New-Object LibreHardwareMonitor.Hardware.Computer
     $c.IsCpuEnabled=$true;$c.IsMotherboardEnabled=$true
     $c.IsGpuEnabled=$false;$c.IsMemoryEnabled=$false
