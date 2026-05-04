@@ -254,19 +254,32 @@ router.get('/callback', async (req, res) => {
     // when the user has access to a tenant of that slug. Otherwise fall
     // back to the first available tenant. Spec:
     // D:\Mockup\obli-cross-app-tenant-handoff.md
+    //
+    // Platform admins (assertion.role === 'admin') have implicit access to
+    // every tenant — that access is NOT materialised in user_tenants rows,
+    // so the regular JOIN on user_tenants would always miss for them.  For
+    // those users we only check that a tenant with the requested slug
+    // exists; the role-based access check downstream handles authorization.
     let resolvedTenantId: number | null = null;
     const requestedSlug = req.session.requestedTenantSlug;
+    const isPlatformAdmin = assertion.role === 'admin';
     if (requestedSlug) {
-      const match = await db('tenants as t')
-        .join('user_tenants as ut', 'ut.tenant_id', 't.id')
-        .where({ 't.slug': requestedSlug, 'ut.user_id': localUserId })
-        .select('t.id')
-        .first() as { id: number } | undefined;
+      let match: { id: number } | undefined;
+      if (isPlatformAdmin) {
+        match = await db('tenants').where({ slug: requestedSlug }).select('id').first() as { id: number } | undefined;
+      } else {
+        match = await db('tenants as t')
+          .join('user_tenants as ut', 'ut.tenant_id', 't.id')
+          .where({ 't.slug': requestedSlug, 'ut.user_id': localUserId })
+          .select('t.id')
+          .first() as { id: number } | undefined;
+      }
       if (match) {
         resolvedTenantId = match.id;
-        logger.info({ userId: localUserId, slug: requestedSlug }, 'Cross-app handoff: tenant matched');
+        logger.info({ userId: localUserId, slug: requestedSlug, isPlatformAdmin },
+          'Cross-app handoff: tenant matched');
       } else {
-        logger.info({ userId: localUserId, slug: requestedSlug },
+        logger.info({ userId: localUserId, slug: requestedSlug, isPlatformAdmin },
           'Cross-app handoff: requested tenant not accessible, falling back');
       }
       // Always clear so the slug does not leak into a subsequent login that
@@ -312,6 +325,9 @@ router.get('/sso-redirect', async (req, res) => {
     const requestedTenant = req.query.tenant;
     if (typeof requestedTenant === 'string' && /^[a-z0-9-]{1,64}$/.test(requestedTenant)) {
       req.session.requestedTenantSlug = requestedTenant;
+      logger.info({ slug: requestedTenant }, 'Cross-app handoff: slug captured in /sso-redirect');
+    } else if (requestedTenant !== undefined) {
+      logger.warn({ raw: String(requestedTenant) }, 'Cross-app handoff: rejected ?tenant= (regex failed)');
     }
 
     const raw = await (await import('../services/appConfig.service')).appConfigService.getObligateRaw();
