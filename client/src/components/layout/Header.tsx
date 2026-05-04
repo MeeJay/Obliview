@@ -1,8 +1,9 @@
-import { Download } from 'lucide-react';
+import { Download, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/authStore';
+import { useTenantStore } from '@/store/tenantStore';
 import { NotificationCenter } from './NotificationCenter';
 import { TenantSwitcher } from './TenantSwitcher';
 import { UserAvatar } from '@/components/common/UserAvatar';
@@ -32,8 +33,14 @@ interface ConnectedApp {
 
 export function Header() {
   const { t } = useTranslation();
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
+  const { tenants, currentTenantId } = useTenantStore();
   const [connectedApps, setConnectedApps] = useState<ConnectedApp[]>([]);
+
+  // Cross-app handoff: forward the current tenant slug to the target app so
+  // the user lands on the same workspace if it exists there. Spec:
+  // D:\Mockup\obli-cross-app-tenant-handoff.md
+  const currentTenantSlug = tenants.find(t => t.id === currentTenantId)?.slug;
 
   useEffect(() => {
     fetch('/api/auth/connected-apps', { credentials: 'include' })
@@ -71,7 +78,11 @@ export function Header() {
             const label = app?.name ?? (type.charAt(0).toUpperCase() + type.slice(1));
             const onClick = isCurrent || !app
               ? undefined
-              : () => { window.location.href = `${app.baseUrl}/auth/sso-redirect`; };
+              : () => {
+                  const url = new URL(`${app.baseUrl}/auth/sso-redirect`);
+                  if (currentTenantSlug) url.searchParams.set('tenant', currentTenantSlug);
+                  window.location.href = url.toString();
+                };
             return (
               <button
                 key={type}
@@ -115,17 +126,29 @@ export function Header() {
         {/* Notification bell */}
         <NotificationCenter />
 
-        {/* User badge */}
+        {/* User badge + logout */}
         {user && (
-          <div className="flex items-center gap-[9px] rounded-[22px] bg-bg-hover py-[5px] pl-[5px] pr-3 text-[12.5px]">
-            <UserAvatar avatar={user.avatar} username={user.username} size={28} />
-            <span className="font-medium text-text-primary">
-              {anonymizeUsername(user.username.startsWith('og_') ? user.username.slice(3) : user.username)}
-            </span>
-            <span className="border-l border-white/10 pl-1.5 font-mono text-[10px] tracking-[0.04em] text-accent-hover">
-              {user.role}
-            </span>
-          </div>
+          <>
+            <div className="flex items-center gap-[9px] rounded-[22px] bg-bg-hover py-[5px] pl-[5px] pr-3 text-[12.5px]">
+              <UserAvatar avatar={user.avatar} username={user.username} size={28} />
+              <span className="font-medium text-text-primary">
+                {anonymizeUsername(
+                  user.displayName?.trim() ||
+                  (user.username.startsWith('og_') ? user.username.slice(3) : user.username),
+                )}
+              </span>
+              <span className="border-l border-border-light pl-2 font-mono text-[10px] uppercase tracking-wider text-accent">
+                {user.role}
+              </span>
+            </div>
+            <button
+              onClick={logout}
+              title={t('nav.signOut')}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+            >
+              <LogOut size={15} />
+            </button>
+          </>
         )}
       </div>
     </header>
