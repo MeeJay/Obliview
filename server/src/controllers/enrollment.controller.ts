@@ -13,7 +13,7 @@ const enrollmentSchema = z.object({
   toastPosition: z.enum(['top-center', 'bottom-right']).default('bottom-right'),
   // Must mirror shared/src/types.ts → AppTheme. The default 'obli-operator'
   // is what a fresh install ships before the user picks a theme.
-  preferredTheme: z.enum(['obli-operator', 'modern', 'neon']).default('obli-operator'),
+  preferredTheme: z.enum(['obli-operator', 'obli-daylight', 'modern', 'neon']).default('obli-operator'),
 });
 
 export const enrollmentController = {

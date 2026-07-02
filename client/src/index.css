@@ -69,6 +69,68 @@
   --shadow-glow: 0 0 0 1px rgba(43,196,189,0.18) inset, 0 6px 28px -10px rgba(43,196,189,0.25);
 }
 
+/* ── Obli Daylight ─────────────────────────────────────────────────────────────
+   Light companion to Obli Operator. Same spatial rhythm — cards without
+   borders, depth via soft shadows. Inter as body, JetBrains Mono for numerics.
+   Obliview accent tuned deeper (teal-600 #0d9488) so dots read on a white
+   background. See D:\Obligate\docs\obli-daylight-theme.md.
+   ───────────────────────────────────────────────────────────────────────────── */
+[data-theme="obli-daylight"] {
+  --c-bg-primary:            250 251 253;   /* #fafbfd  page bg */
+  --c-bg-secondary:          255 255 255;   /* #ffffff  cards */
+  --c-bg-tertiary:           243 245 249;   /* #f3f5f9  input/toolbar */
+  --c-bg-hover:              15 23 42;      /* used with /5 utilities */
+  --c-bg-active:             15 23 42;      /* used with /7 utilities */
+
+  --c-border:                15 23 42;      /* used with /8 utilities */
+  --c-border-light:          15 23 42;      /* used with /12 utilities */
+
+  --c-text-primary:          15 23 42;      /* slate-900 */
+  --c-text-secondary:        71 85 105;     /* slate-600 */
+  --c-text-muted:            148 163 184;   /* slate-400 */
+
+  --c-status-up:             16 163 96;
+  --c-status-up-bg:          220 252 231;
+  --c-status-down:           220 38 38;     /* keep down clearly red on white */
+  --c-status-down-bg:        254 226 226;
+  --c-status-pending:        217 119 6;
+  --c-status-pending-bg:     254 243 199;
+  --c-status-maintenance:    37 99 235;
+  --c-status-maintenance-bg: 219 234 254;
+  --c-status-paused:         148 163 184;
+  --c-status-paused-bg:      241 245 249;
+  --c-status-ssl-warning:    217 119 6;
+  --c-status-ssl-warning-bg: 254 243 199;
+  --c-status-ssl-expired:    147 51 234;
+  --c-status-ssl-expired-bg: 243 232 255;
+
+  /* Obliview accent — teal-600 (deeper than Operator's #2bc4bd for white bg) */
+  --c-accent:                13 148 136;    /* #0d9488 */
+  --c-accent-hover:          20 184 166;    /* #14b8a6 */
+  --c-accent-dark:           15 118 110;    /* #0f766e */
+  --c-primary:               13 148 136;
+
+  --s1:        rgb(var(--c-bg-secondary));
+  --s2:        rgb(var(--c-bg-secondary));
+  --s3:        rgb(var(--c-bg-tertiary));
+  --s4:        rgb(var(--c-bg-active) / 0.07);
+  --accent:    rgb(var(--c-accent));
+  --accent2:   rgb(var(--c-accent-hover));
+  --text:      rgb(var(--c-text-primary));
+  --text2:     rgb(var(--c-text-secondary));
+  --text3:     rgb(var(--c-text-muted));
+  --green:     rgb(var(--c-status-up));
+  --amber:     rgb(var(--c-status-pending));
+  --blue:      rgb(var(--c-status-maintenance));
+  --shadow-card: 0 1px 2px 0 rgba(15,23,42,0.04), 0 6px 24px -12px rgba(15,23,42,0.10);
+  --shadow-glow: 0 0 0 1px rgb(var(--c-accent) / 0.18) inset, 0 8px 32px -12px rgb(var(--c-accent) / 0.22);
+}
+
+[data-theme="obli-daylight"] body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #fafbfd;
+}
+
 /* ── Modern UI — fond très sombre, légèrement teinté de teal (accent app) ── */
 [data-theme="modern"] {
   --c-bg-primary:            10 14 16;     /* near-black with a hint of teal */
