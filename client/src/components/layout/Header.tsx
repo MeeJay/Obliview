@@ -20,10 +20,11 @@ const APP_ACCENTS: Record<string, string> = {
   obliguard: '#f5a623',
   oblimap:   '#1edd8a',
   obliance:  '#e03a3a',
+  obliplan:  '#7c6cff',
   oblihub:   '#2d4ec9',
 };
 const CURRENT_APP = 'obliview';
-const APP_DISPLAY_ORDER = ['obliview', 'obliguard', 'oblimap', 'obliance', 'oblihub'] as const;
+const APP_DISPLAY_ORDER = ['obliview', 'obliguard', 'oblimap', 'obliance', 'obliplan', 'oblihub'] as const;
 
 interface ConnectedApp {
   appType: string;
