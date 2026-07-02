@@ -68,13 +68,14 @@ export function Header() {
       {/* Tenant selector */}
       <TenantSwitcher />
 
-      {/* App switcher pills — hidden inside the native desktop app (the tab bar replaces it) */}
+      {/* App switcher — container-pill design (Obli Daylight §4 spec). Container
+          uses bg-bg-hover to match the user pill on the right. Rounded-lg for
+          admin/professional look. Adapts to every theme via CSS variables. */}
       {!isNativeApp && (
-        <div className="flex gap-1 ml-1.5">
+        <div className="ml-1.5 flex items-center gap-1 rounded-lg bg-bg-hover p-1">
           {APP_DISPLAY_ORDER.map(type => {
             const isCurrent = type === CURRENT_APP;
             const app = appsByType.get(type);
-            // Hide non-current apps that are not connected via Obligate.
             if (!isCurrent && !app) return null;
             const accent = APP_ACCENTS[type];
             const label = app?.name ?? (type.charAt(0).toUpperCase() + type.slice(1));
@@ -92,18 +93,15 @@ export function Header() {
                 onClick={onClick}
                 disabled={isCurrent}
                 className={cn(
-                  'flex items-center gap-[7px] rounded-[7px] px-3 py-1.5 text-[13px] font-medium transition-colors',
+                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors',
                   isCurrent
-                    ? 'cursor-default bg-accent/10 text-accent-hover'
-                    : 'cursor-pointer text-text-secondary hover:bg-bg-hover hover:text-text-primary',
+                    ? 'cursor-default bg-bg-secondary font-semibold text-text-primary shadow-[0_1px_3px_rgba(0,0,0,0.15)]'
+                    : 'cursor-pointer text-text-secondary hover:bg-bg-active hover:text-text-primary',
                 )}
               >
                 <span
-                  className="h-[7px] w-[7px] rounded-full shrink-0"
-                  style={{
-                    background: accent,
-                    boxShadow: isCurrent ? '0 0 8px currentColor' : undefined,
-                  }}
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ background: accent }}
                 />
                 {label}
               </button>
@@ -131,7 +129,7 @@ export function Header() {
         {/* User badge + logout */}
         {user && (
           <>
-            <div className="flex items-center gap-[9px] rounded-[22px] bg-bg-hover py-[5px] pl-[5px] pr-3 text-[12.5px]">
+            <div className="flex items-center gap-[9px] rounded-lg bg-bg-hover py-[5px] pl-[5px] pr-3 text-[12.5px]">
               <UserAvatar avatar={user.avatar} username={user.username} size={28} />
               <span className="font-medium text-text-primary">
                 {anonymizeUsername(

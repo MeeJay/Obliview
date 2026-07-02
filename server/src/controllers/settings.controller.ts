@@ -76,8 +76,8 @@ export const settingsController = {
 
       // Broadcast settings update
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('settings:updated', { scope, scopeId, key, value });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('settings:updated', { scope, scopeId, key, value });
       }
 
       res.json({ success: true, message: 'Setting saved' });
@@ -106,8 +106,8 @@ export const settingsController = {
       void MonitorWorkerManager.getInstance().restartAffectedBySettings(scope, scopeId);
 
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('settings:updated', { scope, scopeId, overrides });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('settings:updated', { scope, scopeId, overrides });
       }
 
       res.json({ success: true, message: 'Settings saved' });
@@ -129,8 +129,8 @@ export const settingsController = {
         void MonitorWorkerManager.getInstance().restartAffectedBySettings(scope, scopeId);
 
         const io = req.app.get('io');
-        if (io) {
-          io.to('role:admin').emit('settings:updated', { scope, scopeId, key, removed: true });
+        if (io && req.tenantId) {
+          io.to(`tenant:${req.tenantId}:admin`).emit('settings:updated', { scope, scopeId, key, removed: true });
         }
       }
 

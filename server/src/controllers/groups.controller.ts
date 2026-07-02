@@ -8,6 +8,17 @@ import { AppError } from '../middleware/errorHandler';
 import type { CreateGroupInput, UpdateGroupInput, MoveGroupInput } from '../validators/group.schema';
 import { getEffectiveTenantScope } from '../utils/tenantScope';
 
+/**
+ * Server-side memo for /groups/stats. Key is `tenantId` for a tenant-scoped
+ * view or the literal 'god' for the God View fan-out. 30-second TTL matches
+ * a comfortable interval below the client's 60 s poll — a full refresh cycle
+ * still happens, but concurrent users share one DB round-trip most of the time.
+ */
+const statsCache = new Map<number | 'god', {
+  at: number;
+  data: Record<number, { uptimePct: number; total: number; up: number }>;
+}>();
+
 export const groupsController = {
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -104,8 +115,8 @@ export const groupsController = {
 
       // Broadcast via Socket.io
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('group:created', { group });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('group:created', { group });
       }
 
       res.status(201).json({ success: true, data: group });
@@ -127,8 +138,8 @@ export const groupsController = {
       }
 
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('group:updated', { group });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('group:updated', { group });
       }
 
       res.json({ success: true, data: group });
@@ -153,8 +164,8 @@ export const groupsController = {
       if (!group) throw new AppError(404, 'Group not found');
 
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('group:moved', { group });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('group:moved', { group });
       }
 
       res.json({ success: true, data: group });
@@ -177,8 +188,8 @@ export const groupsController = {
       if (!deleted) throw new AppError(404, 'Group not found');
 
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('group:deleted', { groupId: id });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('group:deleted', { groupId: id });
       }
 
       res.json({ success: true, message: 'Group deleted' });
@@ -189,14 +200,39 @@ export const groupsController = {
 
   async stats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const tenantScope = getEffectiveTenantScope(req);
+
+      // Per-tenant-scope memo (30 s TTL). This endpoint is polled every 60 s
+      // from GroupTree by every logged-in user, and the underlying queries
+      // scan heartbeats × monitors + group_closure. Even a 30 s cache absorbs
+      // most of the concurrent-user amplification without the client noticing.
+      const cacheKey = tenantScope ?? 'god';
+      const now = Date.now();
+      const cached = statsCache.get(cacheKey);
+      if (cached && now - cached.at < 30_000) {
+        res.json({ success: true, data: cached.data });
+        return;
+      }
+
       const since = new Date();
       since.setHours(since.getHours() - 24);
 
-      const rawStats = await heartbeatService.getRawStatsPerGroup(since);
+      const rawStats = await heartbeatService.getRawStatsPerGroup(since, tenantScope);
 
+      // Scope the closure load to tenant when possible — closure rows are
+      // structural (small) but on large multi-tenant installs the unfiltered
+      // load hits the JS heap harder than needed.
       const { db: database } = await import('../db');
-      const closureRows = await database('group_closure')
-        .select('ancestor_id', 'descendant_id');
+      const closureQuery = database('group_closure').select<{ ancestor_id: number; descendant_id: number }[]>(
+        'group_closure.ancestor_id',
+        'group_closure.descendant_id',
+      );
+      if (typeof tenantScope === 'number') {
+        closureQuery
+          .join('monitor_groups', 'monitor_groups.id', 'group_closure.ancestor_id')
+          .where('monitor_groups.tenant_id', tenantScope);
+      }
+      const closureRows = await closureQuery;
 
       const descendantsMap = new Map<number, number[]>();
       for (const row of closureRows) {
@@ -209,7 +245,7 @@ export const groupsController = {
       const isAdmin = req.session.role === 'admin';
       const visibleIds = await permissionService.getVisibleGroupIds(req.session.userId!, isAdmin);
 
-      const allGroups = await groupService.getAll(getEffectiveTenantScope(req));
+      const allGroups = await groupService.getAll(tenantScope);
       const result: Record<number, { uptimePct: number; total: number; up: number }> = {};
 
       for (const group of allGroups) {
@@ -235,6 +271,7 @@ export const groupsController = {
         };
       }
 
+      statsCache.set(cacheKey, { at: now, data: result });
       res.json({ success: true, data: result });
     } catch (err) {
       next(err);
@@ -275,8 +312,8 @@ export const groupsController = {
       await groupService.reorder(items);
 
       const io = req.app.get('io');
-      if (io) {
-        io.to('role:admin').emit('group:reordered', { items });
+      if (io && req.tenantId) {
+        io.to(`tenant:${req.tenantId}:admin`).emit('group:reordered', { items });
       }
 
       res.json({ success: true, message: 'Groups reordered' });

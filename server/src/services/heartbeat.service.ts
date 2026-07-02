@@ -138,11 +138,23 @@ export const heartbeatService = {
 
   /**
    * Get stats for all monitors at once (dashboard summary).
+   *
+   * `monitorIds` restricts the scan to a specific set — this is essential:
+   *   - Security: without it, a user in tenant B receives uptime% / RT for
+   *     every monitor in tenant A. Ultracode review #2 (critical).
+   *   - Perf: idx_heartbeats(monitor_id, created_at) can drive a per-monitor
+   *     index range scan when the predicate leads with monitor_id.
+   * Passing an empty array short-circuits and returns an empty map.
    */
-  async getStatsForAllMonitors(since?: Date): Promise<
-    Map<number, { uptimePct: number; avgResponseTime: number | null }>
-  > {
-    const query = db('heartbeats').where({ in_maintenance: false });
+  async getStatsForAllMonitors(
+    since: Date | undefined,
+    monitorIds: number[],
+  ): Promise<Map<number, { uptimePct: number; avgResponseTime: number | null }>> {
+    if (monitorIds.length === 0) return new Map();
+
+    const query = db('heartbeats')
+      .where({ in_maintenance: false })
+      .whereIn('monitor_id', monitorIds);
     if (since) {
       query.where('created_at', '>=', since);
     }
@@ -170,9 +182,22 @@ export const heartbeatService = {
 
   /**
    * Get raw heartbeat stats per group_id (direct monitors only, no recursion).
-   * Returns Map<groupId, { total, up }>
+   * Returns Map<groupId, { total, up }>.
+   *
+   * `tenantScope` behaviour:
+   *   - number    → WHERE monitors.tenant_id = <scope>  (regular tenant view)
+   *   - null      → no tenant filter  (platform-admin God View across all tenants)
+   *   - undefined → same as null, preserved for legacy callers
+   *
+   * The tenant filter is essential — the endpoint is polled every 60s by every
+   * logged-in user via GET /groups/stats, and an unfiltered scan of
+   * heartbeats × monitors across the whole install was the top source of
+   * sustained PG CPU pressure in the perf review.
    */
-  async getRawStatsPerGroup(since?: Date): Promise<Map<number, { total: number; up: number }>> {
+  async getRawStatsPerGroup(
+    since?: Date,
+    tenantScope?: number | null,
+  ): Promise<Map<number, { total: number; up: number }>> {
     const query = db('heartbeats')
       .join('monitors', 'heartbeats.monitor_id', 'monitors.id')
       .whereNotNull('monitors.group_id')
@@ -180,6 +205,9 @@ export const heartbeatService = {
 
     if (since) {
       query.where('heartbeats.created_at', '>=', since);
+    }
+    if (typeof tenantScope === 'number') {
+      query.where('monitors.tenant_id', tenantScope);
     }
 
     const rows = await query
@@ -241,20 +269,26 @@ export const heartbeatService = {
 
   /**
    * Get heartbeats for a monitor since a given date, with optional downsampling.
-   * Keeps all non-UP heartbeats to preserve incident visibility.
+   * Keeps ~maxPoints sampled "up" rows for the smooth line, plus non-'up' rows
+   * (also sampled when there are too many, so a chronically-alerting monitor
+   * viewed at long range doesn't return 500k rows and crash the chart).
    */
   async getByMonitorSince(
     monitorId: number,
     since: Date,
     maxPoints: number = 500,
   ): Promise<Heartbeat[]> {
-    // Count total heartbeats in the period
-    const [{ count }] = await db('heartbeats')
+    // Count total + non-'up' rows in one round-trip. The non-'up' count is
+    // needed to decide whether incidents themselves need a second modulo pass.
+    const [row] = await db('heartbeats')
       .where({ monitor_id: monitorId })
       .where('created_at', '>=', since)
-      .count('* as count');
-
-    const total = Number(count);
+      .select(
+        db.raw('COUNT(*)::int as total'),
+        db.raw("COUNT(*) FILTER (WHERE status != 'up')::int as non_up"),
+      );
+    const total = Number(row?.total ?? 0);
+    const nonUp = Number(row?.non_up ?? 0);
 
     if (total <= maxPoints) {
       // No downsampling needed — return all
@@ -265,47 +299,69 @@ export const heartbeatService = {
       return rows.map(rowToHeartbeat);
     }
 
-    // Downsample: use nth-row sampling but keep ALL non-UP heartbeats.
+    // Baseline nth-sampling over ALL rows preserves the smooth line.
+    // Secondary nth-sampling over non-'up' rows only kicks in when a chronic
+    // incident monitor blows past `maxPoints`, so an always-alerting agent at
+    // 30 d / 60 s (~43 k rows) or 1 y (~500 k rows) still returns a bounded
+    // payload instead of the raw heartbeat torrent that the perf review flagged.
     //
-    // No LIMIT here — the modulo sampling already bounds the result to
-    // ~maxPoints (plus the small set of non-UP rows we always preserve for
-    // incident visibility). Adding `LIMIT maxPoints` on top of an ASC sort
-    // truncated the END of the window, causing the chart to flatline before
-    // "now" once total > maxPoints (e.g. 24h view with a 1-push/min agent
-    // dropped everything after roughly the 500th oldest minute).
-    //
-    // Worst-case row count: maxPoints + non_up_count. In a healthy monitor
-    // that is essentially maxPoints; in a noisy one it stays bounded by the
-    // raw incident count, which is far smaller than the total push rate.
+    // Ceiling on payload size: 2 * maxPoints in the worst case (baseline
+    // sample fully disjoint from the incident sample). Well within Recharts
+    // + client memory limits.
     const nth = Math.ceil(total / maxPoints);
+    const nthNonUp = nonUp > maxPoints ? Math.ceil(nonUp / maxPoints) : 1;
     const result = await db.raw(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY created_at ASC) as rn
+        SELECT *,
+          ROW_NUMBER() OVER (ORDER BY created_at ASC) as rn_all,
+          ROW_NUMBER() OVER (
+            PARTITION BY (status = 'up')
+            ORDER BY created_at ASC
+          ) as rn_status
         FROM heartbeats
         WHERE monitor_id = ? AND created_at >= ?
       ) sub
-      WHERE rn % ? = 1 OR status != 'up'
+      WHERE rn_all % ? = 1
+         OR (status != 'up' AND rn_status % ? = 1)
       ORDER BY created_at ASC
-    `, [monitorId, since, nth]);
+    `, [monitorId, since, nth, nthNonUp]);
 
     return (result.rows as HeartbeatRow[]).map(rowToHeartbeat);
   },
 
   /**
-   * Get the N most recent heartbeats for every monitor (single query).
-   * Uses a window function to rank heartbeats per monitor and keep only the top N.
+   * Get the N most recent heartbeats for a set of monitors.
+   *
+   * `monitorIds` restricts both the SQL (idx_heartbeats(monitor_id, created_at)
+   * → per-monitor index range scan) and the visibility of the response.
+   * Ultracode review #5: the previous unbounded version ran a window function
+   * over the ENTIRE heartbeats table on every dashboard mount, degrading
+   * into a full seq scan + big sort as retention grew (up to ~21 M rows).
+   *
+   * The LATERAL join pattern lets Postgres jump into the index per monitor
+   * and grab just the top N rows, instead of window-numbering the whole
+   * table first and filtering afterward.
    */
-  async getRecentForAllMonitors(count: number = 50): Promise<Map<number, Heartbeat[]>> {
-    const result = await db.raw(`
-      SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY created_at DESC) as rn
-        FROM heartbeats
-      ) sub
-      WHERE rn <= ?
-      ORDER BY monitor_id, created_at ASC
-    `, [count]);
-
+  async getRecentForAllMonitors(
+    monitorIds: number[],
+    count: number = 50,
+  ): Promise<Map<number, Heartbeat[]>> {
     const map = new Map<number, Heartbeat[]>();
+    if (monitorIds.length === 0) return map;
+
+    const result = await db.raw(`
+      SELECT h.*
+      FROM unnest(?::int[]) AS m(id)
+      CROSS JOIN LATERAL (
+        SELECT *
+        FROM heartbeats
+        WHERE monitor_id = m.id
+        ORDER BY created_at DESC
+        LIMIT ?
+      ) h
+      ORDER BY h.monitor_id, h.created_at ASC
+    `, [monitorIds, count]);
+
     for (const row of result.rows as HeartbeatRow[]) {
       const hb = rowToHeartbeat(row);
       if (!map.has(hb.monitorId)) {

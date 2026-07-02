@@ -323,11 +323,14 @@ export async function listDevices(req: Request, res: Response): Promise<void> {
     validStatuses.includes(status ?? '') ? (status as 'pending' | 'approved' | 'refused' | 'suspended') : undefined,
   );
 
-  // Batch resolve maintenance state using the service (cached, includes global + group + own)
-  const enriched = await Promise.all(devices.map(async (d) => {
-    const inMaintenance = await maintenanceService.isInMaintenance('agent', d.id, d.groupId);
-    return { ...d, inMaintenance };
-  }));
+  // Batch resolve maintenance state in a single ~3-query pass. Previously
+  // this fired up to 5 uncached queries per device concurrently — the perf
+  // review flagged it as an N+1 that exploded in God View (hundreds of
+  // devices → 1500-2500 parallel queries per HTTP request).
+  const inMaintenanceIds = await maintenanceService.getInMaintenanceAgentIds(
+    devices.map((d) => ({ id: d.id, groupId: d.groupId })),
+  );
+  const enriched = devices.map((d) => ({ ...d, inMaintenance: inMaintenanceIds.has(d.id) }));
 
   res.json({ success: true, data: enriched });
 }

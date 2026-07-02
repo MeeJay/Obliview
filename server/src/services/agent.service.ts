@@ -196,6 +196,72 @@ async function resolveGroupAgentThresholds(groupId: number): Promise<AgentThresh
   return resolved;
 }
 
+/**
+ * Batch resolver: fetch config + thresholds for many group ids in a SINGLE
+ * closure join, then merge per-group in JS. Replaces N × 2 closure queries
+ * with 1 for the /agent/devices listing hot path.
+ *
+ * The per-group `resolveGroupAgentConfig` / `resolveGroupAgentThresholds`
+ * helpers stay for single-device paths where the extra IN-list would be
+ * wasted overhead.
+ */
+async function resolveGroupAgentConfigAndThresholdsBatch(
+  groupIds: number[],
+): Promise<{
+  configMap: Map<number, AgentGroupConfig | null>;
+  thresholdsMap: Map<number, AgentThresholds | null>;
+}> {
+  const configMap = new Map<number, AgentGroupConfig | null>();
+  const thresholdsMap = new Map<number, AgentThresholds | null>();
+  if (groupIds.length === 0) return { configMap, thresholdsMap };
+
+  const rows = await db('group_closure')
+    .join('monitor_groups', 'monitor_groups.id', 'group_closure.ancestor_id')
+    .whereIn('group_closure.descendant_id', groupIds)
+    .orderBy('group_closure.descendant_id')
+    .orderBy('group_closure.depth', 'desc')
+    .select(
+      'group_closure.descendant_id',
+      'monitor_groups.agent_group_config',
+      'monitor_groups.agent_thresholds',
+    ) as Array<{
+      descendant_id: number;
+      agent_group_config: unknown;
+      agent_thresholds: unknown;
+    }>;
+
+  for (const gid of groupIds) {
+    configMap.set(gid, null);
+    thresholdsMap.set(gid, null);
+  }
+
+  for (const r of rows) {
+    // config merge (root → leaf order enforced by depth DESC above)
+    const cfg = typeof r.agent_group_config === 'string'
+      ? JSON.parse(r.agent_group_config) as AgentGroupConfig | null | undefined
+      : r.agent_group_config as AgentGroupConfig | null | undefined;
+    if (cfg) {
+      const existing = configMap.get(r.descendant_id) ?? null;
+      const next: Partial<AgentGroupConfig> = existing ? { ...existing } : {};
+      if (cfg.pushIntervalSeconds != null) next.pushIntervalSeconds = cfg.pushIntervalSeconds;
+      if (cfg.heartbeatMonitoring  != null) next.heartbeatMonitoring  = cfg.heartbeatMonitoring;
+      if (cfg.maxMissedPushes      != null) next.maxMissedPushes      = cfg.maxMissedPushes;
+      configMap.set(r.descendant_id, next as AgentGroupConfig);
+    }
+
+    // thresholds merge
+    const t = typeof r.agent_thresholds === 'string'
+      ? JSON.parse(r.agent_thresholds) as AgentThresholds | null | undefined
+      : r.agent_thresholds as AgentThresholds | null | undefined;
+    if (t) {
+      const existing = thresholdsMap.get(r.descendant_id) ?? null;
+      thresholdsMap.set(r.descendant_id, { ...(existing ?? {}), ...t } as AgentThresholds);
+    }
+  }
+
+  return { configMap, thresholdsMap };
+}
+
 // ============================================================
 // Push payload types
 // ============================================================
@@ -322,18 +388,12 @@ export const agentService = {
     if (status) query.where({ status });
     const rows = await query as AgentDeviceRow[];
 
-    // Deduplicate group IDs, then resolve each group's full closure chain once.
+    // Batch resolve config + thresholds for every unique group in ONE closure
+    // join, instead of the previous 2 queries per group in parallel. On a
+    // God-View listing with hundreds of distinct groups this cut hundreds of
+    // parallel closure queries down to a single IN-list join.
     const uniqueGroupIds = [...new Set(rows.map(r => r.group_id).filter((id): id is number => id !== null))];
-    const configMap = new Map<number, AgentGroupConfig | null>();
-    const thresholdsMap = new Map<number, AgentThresholds | null>();
-    await Promise.all(uniqueGroupIds.map(async (gid) => {
-      const [gc, gt] = await Promise.all([
-        resolveGroupAgentConfig(gid),
-        resolveGroupAgentThresholds(gid),
-      ]);
-      configMap.set(gid, gc);
-      thresholdsMap.set(gid, gt);
-    }));
+    const { configMap, thresholdsMap } = await resolveGroupAgentConfigAndThresholdsBatch(uniqueGroupIds);
 
     return rows.map(r => rowToDevice(
       r,
@@ -412,8 +472,9 @@ export const agentService = {
     }
 
     // Broadcast so the sidebar can update name/status/group without polling
+    // — scoped to the tenant this device belongs to.
     if (_io) {
-      _io.to('role:admin').emit(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, {
+      _io.to(`tenant:${device.tenantId}:admin`).emit(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, {
         deviceId: device.id,
         name: device.name,
         hostname: device.hostname,
@@ -436,12 +497,22 @@ export const agentService = {
 
   async bulkDeleteDevices(ids: number[]): Promise<void> {
     if (ids.length === 0) return;
+    // Grab tenant assignments before the delete so we can scope emissions to
+    // the right admin room (deleted rows can't tell us their tenant).
+    const tenantRows = await db('agent_devices')
+      .whereIn('id', ids)
+      .select('id', 'tenant_id') as Array<{ id: number; tenant_id: number }>;
+    const tenantByDevice = new Map(tenantRows.map((r) => [r.id, r.tenant_id]));
+
     await db('monitors').whereIn('agent_device_id', ids).del();
     await db('agent_devices').whereIn('id', ids).del();
-    // Broadcast deletion events so the frontend updates in real-time
+
     if (_io) {
       for (const id of ids) {
-        _io.to('role:admin').emit(SOCKET_EVENTS.AGENT_DEVICE_DELETED, { deviceId: id });
+        const tid = tenantByDevice.get(id);
+        if (tid !== undefined) {
+          _io.to(`tenant:${tid}:admin`).emit(SOCKET_EVENTS.AGENT_DEVICE_DELETED, { deviceId: id });
+        }
       }
     }
   },
@@ -538,10 +609,13 @@ export const agentService = {
       }
     }
 
-    // Notify frontend of each updated device
+    // Notify frontend of each updated device — scoped to its tenant admins.
     if (_io) {
-      for (const id of ids) {
-        _io.to('role:admin').emit(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, { deviceId: id });
+      const tenantRows = await db('agent_devices')
+        .whereIn('id', ids)
+        .select('id', 'tenant_id') as Array<{ id: number; tenant_id: number }>;
+      for (const r of tenantRows) {
+        _io.to(`tenant:${r.tenant_id}:admin`).emit(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, { deviceId: r.id });
       }
     }
   },
@@ -985,8 +1059,12 @@ export const agentService = {
     agentPushData.set(device.id, snapshot);
 
     // ── Emit real-time updates FIRST (before DB writes) for lowest latency ──
+    // Scoped to the device's tenant only — the previous role:admin fan-out
+    // leaked full CPU/memory/disks/network/temps payloads to every admin in
+    // every tenant on every push (~10-60 MB/min cross-tenant, ultracode #1).
     if (_io) {
-      _io.to('role:admin').emit('agentPush', {
+      const adminRoom = `tenant:${device.tenantId}:admin`;
+      _io.to(adminRoom).emit('agentPush', {
         deviceId: device.id,
         monitorId: monitor.id,
         agentVersion: payload.agentVersion,
@@ -995,11 +1073,11 @@ export const agentService = {
         overallStatus,
         receivedAt: snapshot.receivedAt.toISOString(),
       });
-      _io.to('role:admin').emit(SOCKET_EVENTS.MONITOR_STATUS_CHANGE, {
+      _io.to(adminRoom).emit(SOCKET_EVENTS.MONITOR_STATUS_CHANGE, {
         monitorId: monitor.id,
         newStatus: overallStatus,
       });
-      _io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, {
+      _io.to(adminRoom).emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, {
         deviceId: device.id,
         status: overallStatus,
         violations,
@@ -1031,8 +1109,9 @@ export const agentService = {
         value: heartbeatValue,
       }).then(heartbeat => {
         // Emit MONITOR_HEARTBEAT after insert so the heartbeat has an id/timestamp
+        // — tenant-scoped, same reasoning as the block above.
         if (_io) {
-          _io.to('role:admin').emit(SOCKET_EVENTS.MONITOR_HEARTBEAT, {
+          _io.to(`tenant:${device.tenantId}:admin`).emit(SOCKET_EVENTS.MONITOR_HEARTBEAT, {
             monitorId: monitor.id,
             heartbeat,
           });
@@ -1123,13 +1202,10 @@ export const agentService = {
     const label = device?.name ?? device?.hostname ?? `#${deviceId}`;
     logger.info(`Agent ${deviceId} (${label}) is self-updating.`);
 
-    // Notify connected admins immediately
-    if (_io) {
+    // Notify connected admins in this tenant immediately.
+    if (_io && tenantId) {
       const payload = { deviceId, status: 'updating', violations: [], violationKeys: [] };
-      if (tenantId) {
-        _io.to(`tenant:${tenantId}:admin`).emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, payload);
-      }
-      _io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, payload);
+      _io.to(`tenant:${tenantId}:admin`).emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, payload);
     }
 
     // Send "update" notification if the update type is enabled for this device

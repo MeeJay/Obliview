@@ -50,10 +50,14 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
     socket.join(`tenant:${tenantId}`);
     if (user.role === 'admin') {
       socket.join(`tenant:${tenantId}:admin`);
-      // Keep legacy role:admin room so existing emits continue to work
-      // during gradual migration of all service emits to tenant rooms.
-      socket.join('role:admin');
     }
+    // NOTE: the legacy `role:admin` room join was removed — it was a global
+    // cross-tenant room, and by design any admin from any tenant received
+    // every other tenant's monitor / heartbeat / agent-push events. That was
+    // a cross-tenant data leak + massive amplification (Obliview perf review,
+    // ultracode round 2). All emit sites now target `tenant:${id}:admin`
+    // directly. If a residual `io.to('role:admin').emit(...)` slips through,
+    // it becomes a silent no-op — safe fail-closed behaviour.
 
     // Join notification rooms for ALL tenants this user can access.
     // This ensures cross-tenant live alerts are delivered in real-time,

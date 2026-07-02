@@ -1,7 +1,8 @@
+import { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ChevronRight, Folder, FolderOpen } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
-import type { GroupTreeNode } from '@obliview/shared';
+import type { GroupTreeNode, Monitor } from '@obliview/shared';
 import { cn } from '@/utils/cn';
 import { anonymize } from '@/utils/anonymize';
 import { useMonitorStore } from '@/store/monitorStore';
@@ -65,12 +66,23 @@ export function GroupNode({ node, depth = 0, selectedGroupId, onSelectGroup, dnd
   const isSelected = selectedGroupId === node.id;
   const stats = getGroupStats(node.id);
 
-  // Check if this group (including all descendant groups) contains ONLY value_watcher monitors
-  const allGroupIds = collectGroupIds(node);
-  const allMonitorsInTree = allGroupIds.flatMap((gid) => getMonitorsByGroup(gid));
-  const isValueWatcherOnly = allMonitorsInTree.length > 0 && allMonitorsInTree.every((m) => m.type === 'value_watcher');
+  // Check if this group (incl. descendants) contains ONLY value_watcher monitors.
+  // Memoized: `node` identity is stable across renders (comes from the group
+  // store's tree, only rebuilt on tree refresh), so recomputing subtree ids +
+  // subtree monitor list on every socket-frame re-render was pure overhead —
+  // the sidebar walked O(subtree × total-monitors) per push. Now: one walk
+  // when the tree changes, cheap check otherwise.
+  const allGroupIds = useMemo(() => collectGroupIds(node), [node]);
+  const allMonitorsInTree = useMemo<Monitor[]>(
+    () => allGroupIds.flatMap((gid) => getMonitorsByGroup(gid)),
+    [allGroupIds, getMonitorsByGroup],
+  );
+  const isValueWatcherOnly = allMonitorsInTree.length > 0
+    && allMonitorsInTree.every((m) => m.type === 'value_watcher');
 
-  // If value_watcher only, compute total from latest heartbeat values
+  // If value_watcher only, compute total from latest heartbeat values.
+  // Kept outside the useMemo above because it depends on socket-frame data
+  // (getRecentHeartbeats) — recomputing here on every render is intentional.
   let valueTotal: number | null = null;
   if (isValueWatcherOnly) {
     let sum = 0;

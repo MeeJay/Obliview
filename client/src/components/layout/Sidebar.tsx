@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -109,14 +109,25 @@ export function Sidebar() {
     fetchMonitors();
   }, [fetchMonitors, currentTenantId]);
 
+  // Debounce loadDevices so a burst of AGENT_DEVICE_UPDATED events (typical
+  // during bulk approve/delete: server emits one per device in a tight loop)
+  // collapses into a single refetch instead of N back-to-back full-tenant
+  // scans per admin session. Ultracode review round 2 flagged this as a
+  // stampede vector — 50-device bulk approve × every open admin sidebar
+  // multiplied server load and hammered the API.
+  const loadDevicesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadDevices = useCallback(() => {
     if (!admin) return;
-    Promise.all([
-      agentApi.listDevices('approved'),
-      agentApi.listDevices('suspended'),
-    ])
-      .then(([approved, suspended]) => setApprovedDevices([...approved, ...suspended]))
-      .catch(() => {});
+    if (loadDevicesDebounceRef.current) return;
+    loadDevicesDebounceRef.current = setTimeout(() => {
+      loadDevicesDebounceRef.current = null;
+      Promise.all([
+        agentApi.listDevices('approved'),
+        agentApi.listDevices('suspended'),
+      ])
+        .then(([approved, suspended]) => setApprovedDevices([...approved, ...suspended]))
+        .catch(() => {});
+    }, 400);
   }, [admin]);
 
   useEffect(() => {
@@ -155,7 +166,14 @@ export function Sidebar() {
     };
 
     const onStatusChanged = (data: { deviceId: number; status: string }) => {
-      setDeviceStatuses(prev => new Map(prev).set(data.deviceId, data.status as MonitorStatus | 'suspended'));
+      // Guard against the AgentMonitorWorker firing AGENT_STATUS_CHANGED on
+      // every check cycle regardless of whether the status actually changed.
+      // Without this, every push tick allocates a fresh Map and re-renders
+      // the whole sidebar tree even when nothing moved.
+      setDeviceStatuses(prev => {
+        if (prev.get(data.deviceId) === (data.status as MonitorStatus | 'suspended')) return prev;
+        return new Map(prev).set(data.deviceId, data.status as MonitorStatus | 'suspended');
+      });
     };
 
     socket.on(SOCKET_EVENTS.AGENT_DEVICE_UPDATED, onDeviceUpdated);
@@ -166,21 +184,33 @@ export function Sidebar() {
     };
   }, [admin, loadDevices]);
 
+  // Pre-index monitors by agentDeviceId so the resolver below is O(devices)
+  // rather than O(devices × monitors). Rebuilt only when the monitor set or
+  // its status distribution changes — device-status socket frames don't
+  // invalidate this since they touch `deviceStatuses`, not `monitors`.
+  const monitorsByAgentDeviceId = useMemo(() => {
+    const map = new Map<number, MonitorStatus>();
+    for (const m of monitors.values()) {
+      if (m.agentDeviceId != null) map.set(m.agentDeviceId, m.status);
+    }
+    return map;
+  }, [monitors]);
+
   // Resolve a status for each device by merging the live socket status with
   // its underlying agent monitor's last known status (fallback when no live
-  // frame has arrived yet). Result is passed to <DevicesProvider> so leaf
-  // DraggableDevice rows show the right colored dot from the first render.
-  const resolvedDeviceStatuses = (() => {
+  // frame has arrived yet). Memoized so it stays identity-stable when nothing
+  // changed — <DevicesProvider> below then avoids re-triggering context
+  // consumers on every unrelated sidebar re-render.
+  const resolvedDeviceStatuses = useMemo(() => {
     const map = new Map<number, MonitorStatus | 'suspended' | undefined>();
     for (const dev of approvedDevices) {
       const live = deviceStatuses.get(dev.id);
       if (live) { map.set(dev.id, live); continue; }
-      for (const m of monitors.values()) {
-        if (m.agentDeviceId === dev.id) { map.set(dev.id, m.status); break; }
-      }
+      const fromMonitor = monitorsByAgentDeviceId.get(dev.id);
+      if (fromMonitor) map.set(dev.id, fromMonitor);
     }
     return map;
-  })();
+  }, [approvedDevices, deviceStatuses, monitorsByAgentDeviceId]);
 
   // ── Collapsed (icon-only, 64 px) render ────────────────────────────────────
 

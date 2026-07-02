@@ -607,14 +607,14 @@ export abstract class BaseMonitorWorker {
   private async emitToVisibleUsers(event: string, payload: unknown): Promise<void> {
     const tenantId = await this.resolveTenantId();
 
-    // Always send to admins — emit to the tenant-scoped admin room (primary)
-    // and to the legacy 'role:admin' room for backward compatibility.
+    // Admins in this tenant only. The legacy `role:admin` fan-out was
+    // removed — it delivered every tenant's events to every other tenant's
+    // admins (cross-tenant leak, ultracode review round 2).
     if (tenantId !== null) {
       this.io.to(`tenant:${tenantId}:admin`).emit(event, payload);
     }
-    this.io.to('role:admin').emit(event, payload);
 
-    // Get non-admin user IDs with access to this monitor via team permissions
+    // Non-admin users with team-based access to this monitor
     const userIds = await permissionService.getUsersWithMonitorAccess(this.config.id);
     for (const userId of userIds) {
       this.io.to(`user:${userId}`).emit(event, payload);

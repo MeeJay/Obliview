@@ -11,6 +11,26 @@
          font-display class), mono: JetBrains Mono (IDs / counts / dates).
          See D:\Mockup\obli-design-system.md §3 + §11. -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- FOUC prevention — read the persisted theme BEFORE React boots so the
+         page doesn't briefly render in the wrong theme on reload. Must stay
+         in sync with utils/theme.ts KNOWN_THEMES + STORAGE_KEY. -->
+    <script>
+      try {
+        var t = localStorage.getItem('ov-theme');
+        if (t === 'obli-operator' || t === 'obli-daylight' || t === 'modern' || t === 'neon') {
+          document.documentElement.dataset.theme = t;
+        } else {
+          document.documentElement.dataset.theme = 'obli-operator';
+        }
+      } catch (e) {
+        document.documentElement.dataset.theme = 'obli-operator';
+      }
+    </script>
+    <!-- Pre-Tailwind body backgrounds so the flash before CSS loads matches
+         the saved theme instead of always defaulting to dark. -->
+    <style>
+      [data-theme="obli-daylight"] body { background: #e5e9f0; }
+    </style>
     <title>Obliview</title>
   </head>
   <body class="bg-bg-primary text-text-primary">

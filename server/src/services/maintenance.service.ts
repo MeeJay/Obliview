@@ -540,6 +540,89 @@ export const maintenanceService = {
    * Batch check: returns the set of monitor IDs that are currently in maintenance.
    * Used by the monitor list API to avoid N+1 queries.
    */
+  /**
+   * Batch version of isInMaintenance('agent', …) for a list of devices.
+   * Same shape and logic as getInMaintenanceMonitorIds but with scope_type='agent'.
+   * Used by /agent/devices to avoid firing ~5 uncached queries per device
+   * (the perf review's medium-severity N+1 finding).
+   */
+  async getInMaintenanceAgentIds(devices: Array<{ id: number; groupId: number | null }>): Promise<Set<number>> {
+    const result = new Set<number>();
+    if (devices.length === 0) return result;
+    const now = new Date();
+
+    const allWindows = await db<MaintenanceWindowRow>('maintenance_windows')
+      .where({ active: true })
+      .select('*');
+    const windows = allWindows.map(rowToWindow);
+    const globalWindows = windows.filter((w) => w.scopeType === 'global');
+
+    const groupIds = [...new Set(devices.map((d) => d.groupId).filter((g): g is number => g !== null))];
+    const ancestorMap = new Map<number, number[]>();
+    if (groupIds.length > 0) {
+      const closureRows = await db('group_closure')
+        .whereIn('descendant_id', groupIds)
+        .select('descendant_id', 'ancestor_id');
+      for (const row of closureRows) {
+        if (!ancestorMap.has(row.descendant_id)) ancestorMap.set(row.descendant_id, []);
+        ancestorMap.get(row.descendant_id)!.push(row.ancestor_id);
+      }
+    }
+
+    const allDeviceIds = devices.map((d) => d.id);
+    const allAncestorIds = [...new Set([...ancestorMap.values()].flat())];
+
+    const disableRows = await db('maintenance_window_disables')
+      .where(function () {
+        this.where('scope_type', 'agent').whereIn('scope_id', allDeviceIds);
+        if (allAncestorIds.length > 0) {
+          this.orWhere(function () {
+            this.where('scope_type', 'group').whereIn('scope_id', allAncestorIds);
+          });
+        }
+      })
+      .select('window_id', 'scope_type', 'scope_id');
+
+    const deviceDisables = new Map<number, Set<number>>();
+    const groupDisables = new Map<number, Set<number>>();
+    for (const row of disableRows) {
+      if (row.scope_type === 'agent') {
+        if (!deviceDisables.has(row.scope_id)) deviceDisables.set(row.scope_id, new Set());
+        deviceDisables.get(row.scope_id)!.add(row.window_id);
+      } else if (row.scope_type === 'group') {
+        if (!groupDisables.has(row.scope_id)) groupDisables.set(row.scope_id, new Set());
+        groupDisables.get(row.scope_id)!.add(row.window_id);
+      }
+    }
+
+    for (const device of devices) {
+      const ancestorIds = device.groupId ? (ancestorMap.get(device.groupId) ?? []) : [];
+
+      const disabledIds = new Set<number>();
+      for (const id of (deviceDisables.get(device.id) ?? [])) disabledIds.add(id);
+      for (const gid of ancestorIds) {
+        for (const id of (groupDisables.get(gid) ?? [])) disabledIds.add(id);
+      }
+
+      const ownWindows = windows.filter((w) => w.scopeType === 'agent' && w.scopeId === device.id);
+      if (ownWindows.some((w) => isWindowActive(w, now))) { result.add(device.id); continue; }
+
+      const groupWindows = device.groupId
+        ? windows.filter((w) =>
+            w.scopeType === 'group' &&
+            ancestorIds.includes(w.scopeId!) &&
+            !disabledIds.has(w.id),
+          )
+        : [];
+      if (groupWindows.some((w) => isWindowActive(w, now))) { result.add(device.id); continue; }
+
+      const applicableGlobals = globalWindows.filter((w) => !disabledIds.has(w.id));
+      if (applicableGlobals.some((w) => isWindowActive(w, now))) { result.add(device.id); continue; }
+    }
+
+    return result;
+  },
+
   async getInMaintenanceMonitorIds(monitors: Array<{ id: number; groupId: number | null }>): Promise<Set<number>> {
     const result = new Set<number>();
     const now = new Date();

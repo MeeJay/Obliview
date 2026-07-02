@@ -12,6 +12,15 @@ import { SERVER_START_TIME } from '../utils/serverStartTime';
  * within 2 × check_interval_seconds) and return the current status.
  */
 export class AgentMonitorWorker extends BaseMonitorWorker {
+  /**
+   * Snapshot of the notificationCooldownSeconds value at worker construction
+   * time (resolved from settings by buildConfig). We reset `this.config` back
+   * to this baseline on every tick before walking group_config ancestors —
+   * otherwise clearing a group's cooldown left the last non-null value stuck
+   * on the worker until process restart (ultracode #6 correctness bug).
+   */
+  private baselineNotificationCooldownSeconds: number = this.config.notificationCooldownSeconds;
+
   async performCheck(): Promise<CheckResult> {
     const agentDeviceId = this.config.agentDeviceId as number | null;
 
@@ -55,7 +64,6 @@ export class AgentMonitorWorker extends BaseMonitorWorker {
         if (tenantId !== null) {
           this.io.to(`tenant:${tenantId}:admin`).emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, updatingPayload);
         }
-        this.io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, updatingPayload);
         return result; // skip the generic AGENT_STATUS_CHANGED emit below
       }
       // Updating window expired — cleanupStuckUpdating() will clear this shortly.
@@ -77,6 +85,11 @@ export class AgentMonitorWorker extends BaseMonitorWorker {
       let effectiveCheckInterval = device.check_interval_seconds;
       let effectiveHeartbeatMonitoring = device.heartbeat_monitoring ?? true;
       let effectiveMaxMissedPushes: number | null = device.agent_max_missed_pushes ?? null;
+
+      // Reset to baseline so a cleared group value doesn't leave the previous
+      // group's cooldown stuck on the worker. The ancestor walk below then
+      // re-applies any current non-null values fresh.
+      this.config.notificationCooldownSeconds = this.baselineNotificationCooldownSeconds;
 
       if (!device.override_group_settings && device.group_id !== null) {
         // Traverse ancestor chain ordered root→leaf (depth DESC → root first, depth=0 = self last).
@@ -162,12 +175,11 @@ export class AgentMonitorWorker extends BaseMonitorWorker {
       violations: snapshot?.violations ?? [],
       violationKeys: snapshot?.violationKeys ?? [],
     };
-    // Emit to tenant-scoped admin room (primary) and legacy 'role:admin' for backward compat.
+    // Tenant-scoped admin room only.
     const tenantId = await this.resolveTenantId();
     if (tenantId !== null) {
       this.io.to(`tenant:${tenantId}:admin`).emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, agentStatusPayload);
     }
-    this.io.to('role:admin').emit(SOCKET_EVENTS.AGENT_STATUS_CHANGED, agentStatusPayload);
 
     return result;
   }

@@ -69,51 +69,60 @@
   --shadow-glow: 0 0 0 1px rgba(43,196,189,0.18) inset, 0 6px 28px -10px rgba(43,196,189,0.25);
 }
 
-/* ── Obli Daylight ─────────────────────────────────────────────────────────────
-   Light companion to Obli Operator. Same spatial rhythm — cards without
-   borders, depth via soft shadows. Inter as body, JetBrains Mono for numerics.
-   Obliview accent tuned deeper (teal-600 #0d9488) so dots read on a white
-   background. See D:\Obligate\docs\obli-daylight-theme.md.
+/* ── Obli Daylight (Nordic Mist revision) ─────────────────────────────────────
+   Light companion to Obli Operator. Nord-inspired "Snow Storm" surface (#e5e9f0)
+   with Polar Night text — cushioned blue-gray, not clinical white, to soften
+   glare over long admin sessions. Same spatial rhythm: cards without borders,
+   depth via soft shadows. Inter as body, JetBrains Mono for numerics.
+   The Obliview accent stays IDENTICAL to Operator's teal (#2bc4bd) — Daylight
+   changes surfaces only, not brand identity.
+   See D:\Obligate\docs\obli-daylight-theme.md (Nordic Mist revision).
+
+   ⚠️ CRITICAL — hover/active/border MUST be plain RGB triplets (no `R G B / A`
+   inside the variable). Tailwind emits `rgb(var(--x) / <alpha-value>)`; a
+   stored alpha makes the rule invalid → thick black fallback borders app-wide.
+   Use distinct Nordic Mist tones instead of alphaified slate.
    ───────────────────────────────────────────────────────────────────────────── */
 [data-theme="obli-daylight"] {
-  --c-bg-primary:            250 251 253;   /* #fafbfd  page bg */
-  --c-bg-secondary:          255 255 255;   /* #ffffff  cards */
-  --c-bg-tertiary:           243 245 249;   /* #f3f5f9  input/toolbar */
-  --c-bg-hover:              15 23 42;      /* used with /5 utilities */
-  --c-bg-active:             15 23 42;      /* used with /7 utilities */
+  --c-bg-primary:            229 233 240;   /* #e5e9f0  Snow Storm page bg */
+  --c-bg-secondary:          236 239 244;   /* #eceff4  cards */
+  --c-bg-tertiary:           216 222 233;   /* #d8dee9  inputs / pill container */
+  --c-bg-hover:              222 227 236;   /* subtle inset — one shade off */
+  --c-bg-active:             210 217 229;
 
-  --c-border:                15 23 42;      /* used with /8 utilities */
-  --c-border-light:          15 23 42;      /* used with /12 utilities */
+  --c-border:                212 220 231;
+  --c-border-light:          224 230 240;
 
-  --c-text-primary:          15 23 42;      /* slate-900 */
-  --c-text-secondary:        71 85 105;     /* slate-600 */
-  --c-text-muted:            148 163 184;   /* slate-400 */
+  --c-text-primary:          46 52 64;      /* #2e3440  Polar Night */
+  --c-text-secondary:        76 86 106;     /* #4c566a */
+  --c-text-muted:            129 141 161;   /* #818da1 */
 
   --c-status-up:             16 163 96;
   --c-status-up-bg:          220 252 231;
-  --c-status-down:           220 38 38;     /* keep down clearly red on white */
-  --c-status-down-bg:        254 226 226;
-  --c-status-pending:        217 119 6;
-  --c-status-pending-bg:     254 243 199;
+  --c-status-down:           148 163 184;   /* muted — down/offline reads greyer */
+  --c-status-down-bg:        216 222 233;
+  --c-status-pending:        37 99 235;
+  --c-status-pending-bg:     219 234 254;
   --c-status-maintenance:    37 99 235;
   --c-status-maintenance-bg: 219 234 254;
-  --c-status-paused:         148 163 184;
-  --c-status-paused-bg:      241 245 249;
+  --c-status-paused:         129 141 161;
+  --c-status-paused-bg:      216 222 233;
   --c-status-ssl-warning:    217 119 6;
   --c-status-ssl-warning-bg: 254 243 199;
-  --c-status-ssl-expired:    147 51 234;
-  --c-status-ssl-expired-bg: 243 232 255;
+  --c-status-ssl-expired:    220 38 38;
+  --c-status-ssl-expired-bg: 254 226 226;
 
-  /* Obliview accent — teal-600 (deeper than Operator's #2bc4bd for white bg) */
-  --c-accent:                13 148 136;    /* #0d9488 */
-  --c-accent-hover:          20 184 166;    /* #14b8a6 */
-  --c-accent-dark:           15 118 110;    /* #0f766e */
-  --c-primary:               13 148 136;
+  /* Obliview accent — IDENTICAL to Operator's teal (#2bc4bd). Daylight changes
+     surfaces only, not the brand color. */
+  --c-accent:                43 196 189;    /* #2bc4bd */
+  --c-accent-hover:          95 217 211;    /* #5fd9d3 */
+  --c-accent-dark:           24 142 138;
+  --c-primary:               43 196 189;
 
   --s1:        rgb(var(--c-bg-secondary));
   --s2:        rgb(var(--c-bg-secondary));
   --s3:        rgb(var(--c-bg-tertiary));
-  --s4:        rgb(var(--c-bg-active) / 0.07);
+  --s4:        rgb(var(--c-bg-active));
   --accent:    rgb(var(--c-accent));
   --accent2:   rgb(var(--c-accent-hover));
   --text:      rgb(var(--c-text-primary));
@@ -122,13 +131,13 @@
   --green:     rgb(var(--c-status-up));
   --amber:     rgb(var(--c-status-pending));
   --blue:      rgb(var(--c-status-maintenance));
-  --shadow-card: 0 1px 2px 0 rgba(15,23,42,0.04), 0 6px 24px -12px rgba(15,23,42,0.10);
+  --shadow-card: 0 1px 2px 0 rgba(46,52,64,0.03), 0 6px 24px -12px rgba(46,52,64,0.08);
   --shadow-glow: 0 0 0 1px rgb(var(--c-accent) / 0.18) inset, 0 8px 32px -12px rgb(var(--c-accent) / 0.22);
 }
 
 [data-theme="obli-daylight"] body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #fafbfd;
+  background: #e5e9f0;
 }
 
 /* ── Modern UI — fond très sombre, légèrement teinté de teal (accent app) ── */

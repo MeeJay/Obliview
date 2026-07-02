@@ -12,12 +12,11 @@ import { maintenanceService } from '../services/maintenance.service';
 import { agentHub } from '../services/agentHub.service';
 import { getEffectiveTenantScope } from '../utils/tenantScope';
 
-/** Broadcast a monitor event to all admin clients (and tenant-scoped admin room). */
+/** Broadcast a monitor event to admin clients in the current tenant only. */
 function emitMonitorEvent(req: Request, event: string, payload: unknown): void {
   const io = req.app.get('io');
-  if (!io) return;
-  if (req.tenantId) io.to(`tenant:${req.tenantId}:admin`).emit(event, payload);
-  io.to('role:admin').emit(event, payload);
+  if (!io || !req.tenantId) return;
+  io.to(`tenant:${req.tenantId}:admin`).emit(event, payload);
 }
 
 export const monitorsController = {
@@ -302,11 +301,30 @@ export const monitorsController = {
     }
   },
 
-  async summary(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async summary(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const since = new Date();
       since.setHours(since.getHours() - 24);
-      const statsMap = await heartbeatService.getStatsForAllMonitors(since);
+
+      // Restrict the aggregate to monitors the user can actually see. This
+      // both plugs a cross-tenant data leak (any user was receiving uptime %
+      // + avg RT for every monitor in every tenant) and lets Postgres drive
+      // the per-monitor index range scan instead of full-scanning the whole
+      // heartbeats table on every 60 s dashboard poll.
+      const isAdmin = req.session.role === 'admin';
+      const tenantScope = getEffectiveTenantScope(req);
+      const visibleIds = await permissionService.getVisibleMonitorIds(req.session.userId!, isAdmin);
+
+      let monitorIds: number[];
+      if (visibleIds === 'all') {
+        // Admin — restrict to the active tenant scope (or all in God View)
+        const monitors = await monitorService.getAll(tenantScope);
+        monitorIds = monitors.map((m) => m.id);
+      } else {
+        monitorIds = visibleIds;
+      }
+
+      const statsMap = await heartbeatService.getStatsForAllMonitors(since, monitorIds);
       const data: Record<number, { uptimePct: number; avgResponseTime: number | null }> = {};
       for (const [id, s] of statsMap) {
         data[id] = s;
@@ -323,21 +341,25 @@ export const monitorsController = {
       const clampedCount = Math.min(Math.max(count, 1), 300);
 
       const isAdmin = req.session.role === 'admin';
+      const tenantScope = getEffectiveTenantScope(req);
       const visibleIds = await permissionService.getVisibleMonitorIds(req.session.userId!, isAdmin);
 
-      const allMap = await heartbeatService.getRecentForAllMonitors(clampedCount);
-
-      // Filter to only visible monitors
-      const data: Record<number, Heartbeat[]> = {};
+      // Resolve the concrete monitor id list to push into SQL — the previous
+      // implementation window-numbered the whole heartbeats table then
+      // filtered in JS, degrading to a full scan on any real install.
+      let monitorIds: number[];
       if (visibleIds === 'all') {
-        for (const [id, hbs] of allMap) {
-          data[id] = hbs;
-        }
+        const monitors = await monitorService.getAll(tenantScope);
+        monitorIds = monitors.map((m) => m.id);
       } else {
-        for (const id of visibleIds) {
-          const hbs = allMap.get(id);
-          if (hbs) data[id] = hbs;
-        }
+        monitorIds = visibleIds;
+      }
+
+      const allMap = await heartbeatService.getRecentForAllMonitors(monitorIds, clampedCount);
+
+      const data: Record<number, Heartbeat[]> = {};
+      for (const [id, hbs] of allMap) {
+        data[id] = hbs;
       }
 
       res.json({ success: true, data });
