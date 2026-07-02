@@ -7,6 +7,7 @@ import { useTenantStore } from '@/store/tenantStore';
 import { NotificationCenter } from './NotificationCenter';
 import { TenantSwitcher } from './TenantSwitcher';
 import { UserAvatar } from '@/components/common/UserAvatar';
+import { Logo } from '@/components/common/Logo';
 import { cn } from '@/utils/cn';
 import { anonymizeUsername } from '@/utils/anonymize';
 
@@ -61,7 +62,7 @@ export function Header() {
     <header className="flex h-[52px] shrink-0 items-center gap-3.5 bg-bg-secondary px-[18px]">
       {/* Logo */}
       <Link to="/" className="flex items-center shrink-0">
-        <img src="/logo.svg" alt="Obliview" className="h-9 w-auto max-w-[200px] object-contain" />
+        <Logo className="h-9 w-auto max-w-[200px] object-contain" />
       </Link>
 
       {/* Tenant selector */}

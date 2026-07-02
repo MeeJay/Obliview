@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/authStore';
 import { SUPPORTED_LANGUAGES, setLanguage } from '@/i18n';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { Logo } from '@/components/common/Logo';
 import { ThemePicker } from '@/components/ThemePicker';
 import { applyTheme, type AppTheme } from '@/utils/theme';
 
@@ -540,7 +541,7 @@ export function EnrollmentPage() {
     <div className="min-h-screen bg-bg-primary flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-xl">
         <div className="text-center mb-8">
-          <img src="/logo.svg" alt="Obliview" className="mx-auto h-20 w-20 mb-3" />
+          <Logo className="mx-auto h-20 w-20 mb-3" />
           <p className="text-sm text-text-muted mt-1">{t('enrollment.welcomeSubtitle')}</p>
         </div>
 
