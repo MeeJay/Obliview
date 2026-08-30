@@ -528,7 +528,23 @@
     "channelExcluded": "Channel excluded",
     "failedAddBinding": "Failed to add binding",
     "failedRemoveBinding": "Failed to remove binding",
-    "failedExcludeBinding": "Failed to exclude channel"
+    "failedExcludeBinding": "Failed to exclude channel",
+    "plugins": {
+      "oblidesk": {
+        "name": "Oblidesk",
+        "description": "Open and auto-resolve service desk tickets in Oblidesk",
+        "baseUrl": "Oblidesk URL",
+        "baseUrlPlaceholder": "https://desk.example.com",
+        "apiKey": "API Key",
+        "apiKeyPlaceholder": "Paste the key from Oblidesk → Integrations",
+        "queueSlug": "Queue (optional)",
+        "queueSlugPlaceholder": "Leave blank for the default queue",
+        "minSeverity": "Minimum Severity",
+        "severityInfo": "Info",
+        "severityWarning": "Warning",
+        "severityCritical": "Critical"
+      }
+    }
   },
   "settings": {
     "obligate": {

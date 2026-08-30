@@ -10,6 +10,7 @@ import { ntfyPlugin } from './plugins/ntfy';
 import { pushoverPlugin } from './plugins/pushover';
 import { smtpPlugin } from './plugins/smtp';
 import { freemobilePlugin } from './plugins/freemobile';
+import { obliDeskPlugin } from './plugins/oblidesk';
 
 const plugins = new Map<string, NotificationPlugin>();
 
@@ -25,6 +26,7 @@ const plugins = new Map<string, NotificationPlugin>();
   pushoverPlugin,
   smtpPlugin,
   freemobilePlugin,
+  obliDeskPlugin,
 ].forEach((plugin) => {
   plugins.set(plugin.type, plugin);
 });

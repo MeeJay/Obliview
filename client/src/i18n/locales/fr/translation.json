@@ -485,7 +485,23 @@
     "channelExcluded": "Canal exclu",
     "failedAddBinding": "Échec de l'ajout de la liaison",
     "failedRemoveBinding": "Échec de la suppression de la liaison",
-    "failedExcludeBinding": "Échec de l'exclusion du canal"
+    "failedExcludeBinding": "Échec de l'exclusion du canal",
+    "plugins": {
+      "oblidesk": {
+        "name": "Oblidesk",
+        "description": "Ouvrir et résoudre automatiquement des tickets de support dans Oblidesk",
+        "baseUrl": "URL Oblidesk",
+        "baseUrlPlaceholder": "https://desk.example.com",
+        "apiKey": "Clé API",
+        "apiKeyPlaceholder": "Collez la clé depuis Oblidesk → Intégrations",
+        "queueSlug": "File d'attente (optionnel)",
+        "queueSlugPlaceholder": "Laisser vide pour la file par défaut",
+        "minSeverity": "Sévérité minimale",
+        "severityInfo": "Info",
+        "severityWarning": "Avertissement",
+        "severityCritical": "Critique"
+      }
+    }
   },
   "settings": {
     "obligate": {

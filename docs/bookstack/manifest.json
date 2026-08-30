@@ -1,0 +1,150 @@
+{
+  "shelf": {
+    "name": "ObliTools",
+    "description": "Documentation de la suite ObliTools — outils internes de l'écosystème Obli."
+  },
+  "book": {
+    "name": "Obliview",
+    "description": "Obliview — plateforme de supervision (monitoring) multi-tenant de la suite Obli : groupes hiérarchiques avec héritage de réglages, 13 types de moniteurs, 10 plugins de notification, agent natif Go (métriques matérielles, WebSocket temps réel), SSO fédéré via Obligate, remédiation automatique, fenêtres de maintenance et launcher desktop ObliTools.",
+    "priority": 2
+  },
+  "chapters": [
+    {
+      "name": "Présentation",
+      "priority": 1,
+      "pages": [
+        { "name": "Vue d'ensemble & positionnement", "file": "01-presentation/01-vue-d-ensemble.md", "priority": 1 },
+        { "name": "Concepts clés & glossaire", "file": "01-presentation/02-concepts-cles.md", "priority": 2 },
+        { "name": "Rôles, capacités & périmètres", "file": "01-presentation/03-roles-et-permissions.md", "priority": 3 },
+        { "name": "Panorama des fonctionnalités", "file": "01-presentation/04-panorama-fonctionnel.md", "priority": 4 }
+      ]
+    },
+    {
+      "name": "Architecture technique",
+      "priority": 2,
+      "pages": [
+        { "name": "Stack technique & monorepo", "file": "02-architecture/01-stack-et-monorepo.md", "priority": 1 },
+        { "name": "Architecture serveur (couches & middleware)", "file": "02-architecture/02-architecture-serveur.md", "priority": 2 },
+        { "name": "Architecture client (SPA, store, design system)", "file": "02-architecture/03-architecture-client.md", "priority": 3 },
+        { "name": "Temps réel : Socket.io & canal WebSocket agent", "file": "02-architecture/04-temps-reel-et-agent-ws.md", "priority": 4 }
+      ]
+    },
+    {
+      "name": "Installation & configuration",
+      "priority": 3,
+      "pages": [
+        { "name": "Développement local (Windows)", "file": "03-installation/01-developpement-local.md", "priority": 1 },
+        { "name": "Variables d'environnement & configuration", "file": "03-installation/02-variables-environnement.md", "priority": 2 },
+        { "name": "Build & packaging (WiX, signature)", "file": "03-installation/03-build-et-packaging.md", "priority": 3 }
+      ]
+    },
+    {
+      "name": "Authentification & SSO",
+      "priority": 4,
+      "pages": [
+        { "name": "Authentification locale & 2FA", "file": "04-authentification-sso/01-authentification-locale.md", "priority": 1 },
+        { "name": "SSO — intégration Obligate", "file": "04-authentification-sso/02-sso-obligate.md", "priority": 2 },
+        { "name": "Multi-tenance", "file": "04-authentification-sso/03-multi-tenance.md", "priority": 3 }
+      ]
+    },
+    {
+      "name": "Groupes & héritage des réglages",
+      "priority": 5,
+      "pages": [
+        { "name": "Hiérarchie de groupes (closure table)", "file": "05-groupes-settings/01-hierarchie-groupes.md", "priority": 1 },
+        { "name": "Héritage des paramètres", "file": "05-groupes-settings/02-heritage-parametres.md", "priority": 2 },
+        { "name": "Héritage des notifications (merge/replace)", "file": "05-groupes-settings/03-heritage-notifications.md", "priority": 3 }
+      ]
+    },
+    {
+      "name": "Modèle de données",
+      "priority": 6,
+      "pages": [
+        { "name": "Vue du schéma & migrations", "file": "06-modele-donnees/01-vue-schema-migrations.md", "priority": 1 },
+        { "name": "Cœur : users, tenants, groupes", "file": "06-modele-donnees/02-coeur-users-tenants-groupes.md", "priority": 2 },
+        { "name": "Monitoring : monitors & heartbeats", "file": "06-modele-donnees/03-monitoring-heartbeats.md", "priority": 3 },
+        { "name": "Agents", "file": "06-modele-donnees/04-agents.md", "priority": 4 },
+        { "name": "Transverse : notifications, maintenance, remédiation, SSO, teams", "file": "06-modele-donnees/05-transverse.md", "priority": 5 }
+      ]
+    },
+    {
+      "name": "Référence API REST",
+      "priority": 7,
+      "pages": [
+        { "name": "Conventions API & enveloppe de réponse", "file": "07-api/01-conventions.md", "priority": 1 },
+        { "name": "API : auth, tenants, users, teams", "file": "07-api/02-auth-tenants-users.md", "priority": 2 },
+        { "name": "API : monitors & groupes", "file": "07-api/03-monitors-groupes.md", "priority": 3 },
+        { "name": "API & WS : agents", "file": "07-api/04-agents.md", "priority": 4 },
+        { "name": "API : notifications, maintenance, remédiation, admin", "file": "07-api/05-notifications-maintenance-admin.md", "priority": 5 }
+      ]
+    },
+    {
+      "name": "Monitoring",
+      "priority": 8,
+      "pages": [
+        { "name": "BaseMonitorWorker & MonitorWorkerManager", "file": "08-monitoring/01-worker-manager.md", "priority": 1 },
+        { "name": "Moniteurs réseau (HTTP, Ping, TCP, DNS, SSL, SMTP)", "file": "08-monitoring/02-moniteurs-reseau.md", "priority": 2 },
+        { "name": "Moniteurs applicatifs (Docker, Game Server, JSON API, Script, Browser, ValueWatcher)", "file": "08-monitoring/03-moniteurs-applicatifs.md", "priority": 3 },
+        { "name": "Push monitors & heartbeats", "file": "08-monitoring/04-push-monitors.md", "priority": 4 }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "priority": 9,
+      "pages": [
+        { "name": "Les 10 plugins de notification", "file": "09-notifications/01-plugins.md", "priority": 1 },
+        { "name": "Canaux, bindings & héritage", "file": "09-notifications/02-canaux-et-bindings.md", "priority": 2 },
+        { "name": "Debounce & cooldown des notifications", "file": "09-notifications/03-debounce-cooldown.md", "priority": 3 }
+      ]
+    },
+    {
+      "name": "Système d'agent",
+      "priority": 10,
+      "pages": [
+        { "name": "Architecture de l'agent Go", "file": "10-agent-systeme/01-architecture-agent-go.md", "priority": 1 },
+        { "name": "Canal de commandes WebSocket & polling legacy", "file": "10-agent-systeme/02-canal-commandes-ws.md", "priority": 2 },
+        { "name": "Capteurs matériels (LHM, PawnIO, NVMe)", "file": "10-agent-systeme/03-capteurs-materiels.md", "priority": 3 },
+        { "name": "Seuils, configuration de groupe & overrides", "file": "10-agent-systeme/04-seuils-et-configuration-groupe.md", "priority": 4 },
+        { "name": "Cycle de vie : installation, mise à jour, désinstallation", "file": "10-agent-systeme/05-cycle-de-vie-agent.md", "priority": 5 }
+      ]
+    },
+    {
+      "name": "ObliTools (launcher desktop)",
+      "priority": 11,
+      "pages": [
+        { "name": "Le launcher desktop ObliTools", "file": "11-oblitools/01-launcher-desktop.md", "priority": 1 },
+        { "name": "Barre d'onglets, navigation cross-app, notifications sonores", "file": "11-oblitools/02-tab-bar-et-navigation.md", "priority": 2 },
+        { "name": "Intégrations cross-app", "file": "11-oblitools/03-integrations-cross-app.md", "priority": 3 }
+      ]
+    },
+    {
+      "name": "Administration",
+      "priority": 12,
+      "pages": [
+        { "name": "Utilisateurs & équipes", "file": "12-administration/01-utilisateurs-et-equipes.md", "priority": 1 },
+        { "name": "RBAC : rôles, permission sets, global teams", "file": "12-administration/02-rbac.md", "priority": 2 },
+        { "name": "Fenêtres de maintenance", "file": "12-administration/03-maintenance.md", "priority": 3 },
+        { "name": "Système de remédiation", "file": "12-administration/04-remediation.md", "priority": 4 }
+      ]
+    },
+    {
+      "name": "Exploitation & sécurité",
+      "priority": 13,
+      "pages": [
+        { "name": "Sécurité (headers, CSP, rate limiting)", "file": "13-exploitation-securite/01-securite.md", "priority": 1 },
+        { "name": "Alertes live & Socket.io", "file": "13-exploitation-securite/02-alertes-live.md", "priority": 2 },
+        { "name": "Rétention, jobs planifiés & nettoyage", "file": "13-exploitation-securite/03-retention-et-jobs.md", "priority": 3 },
+        { "name": "Internationalisation (i18n)", "file": "13-exploitation-securite/04-internationalisation.md", "priority": 4 }
+      ]
+    },
+    {
+      "name": "Release & déploiement",
+      "priority": 14,
+      "pages": [
+        { "name": "Signature de code & packaging Windows", "file": "14-release/01-signature-et-packaging-windows.md", "priority": 1 },
+        { "name": "Build agent multi-plateforme", "file": "14-release/02-build-multi-plateforme.md", "priority": 2 },
+        { "name": "Import/Export & endpoint système", "file": "14-release/03-import-export-et-systeme.md", "priority": 3 }
+      ]
+    }
+  ]
+}

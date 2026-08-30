@@ -403,9 +403,13 @@ export interface NotificationPluginMeta {
 export interface NotificationConfigField {
   key: string;
   label: string;
-  type: 'text' | 'password' | 'number' | 'url' | 'textarea' | 'boolean' | 'smtp_server_select';
+  type: 'text' | 'password' | 'number' | 'url' | 'textarea' | 'boolean' | 'smtp_server_select' | 'select';
   placeholder?: string;
   required?: boolean;
+  /** Choices for type: 'select' */
+  options?: { value: string; label: string }[];
+  /** Pre-selected value for type: 'select' when the config has no value yet */
+  defaultValue?: string;
 }
 
 // ============================================

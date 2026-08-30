@@ -393,6 +393,25 @@ export function NotificationsPage() {
                   </div>
                 );
               }
+              if (field.type === 'select') {
+                return (
+                  <div key={field.key} className="space-y-1">
+                    <label className="block text-sm font-medium text-text-secondary">
+                      {field.label}{field.required && <span className="text-status-down ml-1">*</span>}
+                    </label>
+                    <select
+                      value={String(formConfig[field.key] ?? field.defaultValue ?? '')}
+                      onChange={(e) => setFormConfig({ ...formConfig, [field.key]: e.target.value })}
+                      required={field.required}
+                      className="w-full rounded-md border border-border bg-bg-tertiary px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      {(field.options ?? []).map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              }
               return (
                 <Input
                   key={field.key}

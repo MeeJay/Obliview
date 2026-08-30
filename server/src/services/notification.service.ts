@@ -45,6 +45,180 @@ function rowToChannel(row: ChannelRow, currentTenantId?: number): NotificationCh
   return ch;
 }
 
+// ─── Alert-spine enrichment (Oblidesk) ───────────────────────────────────────
+// Every outbound notification is stamped with a stable identity so a downstream
+// service desk can dedupe, auto-resolve and bind the alert to a device.
+// Resolution is one small query per monitor/group, cached with a short TTL
+// because this runs on every single notification.
+
+const IDENTITY_TTL_MS = 60_000; // 60 seconds — same TTL as the maintenance cache
+
+interface MonitorIdentity {
+  monitorType?: string;
+  agentDeviceId: number | null;
+  deviceUuid: string | null;
+  tenantId?: number;
+  tenantSlug?: string;
+}
+
+interface IdentityCacheEntry {
+  value: MonitorIdentity;
+  cachedAt: number;
+}
+
+const monitorIdentityCache = new Map<number, IdentityCacheEntry>();
+const groupIdentityCache = new Map<number, IdentityCacheEntry>();
+
+function getCachedIdentity(cache: Map<number, IdentityCacheEntry>, key: number): MonitorIdentity | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > IDENTITY_TTL_MS) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+/** monitor → tenant slug + agent device uuid, in a single left-joined row. */
+async function resolveMonitorIdentity(monitorId: number): Promise<MonitorIdentity> {
+  const cached = getCachedIdentity(monitorIdentityCache, monitorId);
+  if (cached !== null) return cached;
+
+  const row = await db('monitors')
+    .leftJoin('tenants', 'tenants.id', 'monitors.tenant_id')
+    .leftJoin('agent_devices', 'agent_devices.id', 'monitors.agent_device_id')
+    .where('monitors.id', monitorId)
+    .first(
+      'monitors.type as type',
+      'monitors.tenant_id as tenant_id',
+      'monitors.agent_device_id as agent_device_id',
+      'tenants.slug as tenant_slug',
+      'agent_devices.uuid as device_uuid',
+    ) as
+      | { type: string | null; tenant_id: number | null; agent_device_id: number | null; tenant_slug: string | null; device_uuid: string | null }
+      | undefined;
+
+  const identity: MonitorIdentity = {
+    monitorType: row?.type ?? undefined,
+    agentDeviceId: row?.agent_device_id ?? null,
+    deviceUuid: row?.device_uuid ?? null,
+    tenantId: row?.tenant_id ?? undefined,
+    tenantSlug: row?.tenant_slug ?? undefined,
+  };
+  monitorIdentityCache.set(monitorId, { value: identity, cachedAt: Date.now() });
+  return identity;
+}
+
+/** group → tenant slug. Groups carry no device, so those stay null. */
+async function resolveGroupIdentity(groupId: number): Promise<MonitorIdentity> {
+  const cached = getCachedIdentity(groupIdentityCache, groupId);
+  if (cached !== null) return cached;
+
+  const row = await db('monitor_groups')
+    .leftJoin('tenants', 'tenants.id', 'monitor_groups.tenant_id')
+    .where('monitor_groups.id', groupId)
+    .first('monitor_groups.tenant_id as tenant_id', 'tenants.slug as tenant_slug') as
+      | { tenant_id: number | null; tenant_slug: string | null }
+      | undefined;
+
+  const identity: MonitorIdentity = {
+    agentDeviceId: null,
+    deviceUuid: null,
+    tenantId: row?.tenant_id ?? undefined,
+    tenantSlug: row?.tenant_slug ?? undefined,
+  };
+  groupIdentityCache.set(groupId, { value: identity, cachedAt: Date.now() });
+  return identity;
+}
+
+/**
+ * Map an Obliview monitor status onto the three-level severity a service desk
+ * uses for ticket priority. 'ssl_expired' is grouped with the criticals because
+ * BaseMonitorWorker already treats it as a hard problem status.
+ */
+function severityForStatus(status: string): 'info' | 'warning' | 'critical' {
+  switch (status) {
+    case 'down':
+    case 'alert':
+    case 'ssl_expired':
+      return 'critical';
+    case 'ssl_warning':
+    case 'pending':
+    case 'value_changed':
+      return 'warning';
+    case 'up':
+    case 'inactive':
+    case 'maintenance':
+      return 'info';
+    default:
+      return 'warning';
+  }
+}
+
+// In-process occurrence counter per stableKey: how many times this alert has
+// fired since its last recovery. Feeds Oblidesk's flap detection. Resets on
+// recovery and on server restart (it is a hint, not a ledger).
+const OCCURRENCE_TTL_MS = 24 * 60 * 60 * 1000;
+const occurrenceCounts = new Map<string, { count: number; updatedAt: number }>();
+
+function nextOccurrenceCount(stableKey: string, isRecovery: boolean): number {
+  const now = Date.now();
+  const entry = occurrenceCounts.get(stableKey);
+  const current = entry && now - entry.updatedAt <= OCCURRENCE_TTL_MS ? entry.count : 0;
+
+  if (isRecovery) {
+    // Report how many times the alert being resolved had fired, then forget it.
+    occurrenceCounts.delete(stableKey);
+    return current;
+  }
+
+  // Lazy prune so a long-lived process with churning keys cannot grow unbounded.
+  if (occurrenceCounts.size > 500) {
+    for (const [key, value] of occurrenceCounts) {
+      if (now - value.updatedAt > OCCURRENCE_TTL_MS) occurrenceCounts.delete(key);
+    }
+  }
+
+  const next = current + 1;
+  occurrenceCounts.set(stableKey, { count: next, updatedAt: now });
+  return next;
+}
+
+/**
+ * Stamp a payload with the alert-spine identity fields.
+ * Note on maintenance: Obliview already suppresses notifications during a
+ * maintenance window upstream (BaseMonitorWorker.handleStatusChange returns
+ * before dispatching, and maintenanceService.isInMaintenance owns that decision
+ * with its own 60s cache). We do NOT re-check it here — we only forward whatever
+ * the caller already knows, so the consumer sees the same verdict Obliview used.
+ */
+async function enrichPayload(
+  payload: NotificationPayload,
+  identity: MonitorIdentity,
+  stableKey: string,
+  extra: { monitorId?: number },
+): Promise<NotificationPayload> {
+  const isRecovery = payload.newStatus === 'up';
+  return {
+    ...payload,
+    appName: config.appName,
+    ...extra,
+    monitorType: identity.monitorType,
+    agentDeviceId: identity.agentDeviceId,
+    deviceUuid: identity.deviceUuid,
+    tenantId: identity.tenantId,
+    tenantSlug: identity.tenantSlug,
+    stableKey,
+    severity: severityForStatus(payload.newStatus),
+    isRecovery,
+    // The real state-change time carried in the payload — never "now" at send time.
+    recoveredAt: isRecovery ? payload.timestamp : undefined,
+    occurrenceCount: nextOccurrenceCount(stableKey, isRecovery),
+    inMaintenance: payload.inMaintenance ?? false,
+    suppressedReason: payload.suppressedReason ?? null,
+  };
+}
+
 function rowToBinding(row: BindingRow): NotificationBinding {
   return {
     id: row.id,
@@ -444,8 +618,13 @@ export const notificationService = {
       return;
     }
 
-    // Enrich payload with app name from config
-    const enrichedPayload: NotificationPayload = { ...payload, appName: config.appName };
+    // Enrich payload with app name from config + alert-spine identity
+    const enrichedPayload: NotificationPayload = await enrichPayload(
+      payload,
+      await resolveMonitorIdentity(monitorId),
+      `obliview:monitor:${monitorId}`,
+      { monitorId },
+    );
 
     const channels = await db<ChannelRow>('notification_channels')
       .whereIn('id', channelIds)
@@ -814,7 +993,12 @@ export const notificationService = {
     const channelIds = await this.resolveChannelsForGroup(groupId);
     if (channelIds.length === 0) return;
 
-    const enrichedPayload: NotificationPayload = { ...payload, appName: config.appName };
+    const enrichedPayload: NotificationPayload = await enrichPayload(
+      payload,
+      await resolveGroupIdentity(groupId),
+      `obliview:group:${groupId}`,
+      {},
+    );
 
     const channels = await db<ChannelRow>('notification_channels')
       .whereIn('id', channelIds)
